@@ -166,6 +166,42 @@ pub fn decrypt_chunk(
         .map_err(|_| CryptoError::Auth)
 }
 
+/// WASM export: allocate `len` bytes (alignment 16) from the module's own
+/// allocator. The phone page stages its key/nonce/chunk buffers here instead
+/// of writing at fixed low addresses — fixed offsets clobber the module's
+/// statics, shadow stack, and allocator metadata (heap corruption and
+/// "detached ArrayBuffer" errors on real phones). Pair every alloc with a
+/// free of the SAME length. Returns 0 when `len` is 0 (nothing to stage).
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn airlynk_alloc(len: usize) -> *mut u8 {
+    use std::alloc::{alloc, Layout};
+    if len == 0 {
+        return std::ptr::null_mut();
+    }
+    // Layout::from_size_align is const-correct here: len > 0 and 16 divides
+    // every realistic chunk size, but handle the impossible error safely.
+    match Layout::from_size_align(len, 16) {
+        Ok(layout) => unsafe { alloc(layout) },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// WASM export: free a block previously returned by `airlynk_alloc`, with the
+/// SAME length it was allocated with (the wasm System allocator needs the
+/// original Layout size).
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn airlynk_free(ptr: *mut u8, len: usize) {
+    use std::alloc::{dealloc, Layout};
+    if ptr.is_null() || len == 0 {
+        return;
+    }
+    if let Ok(layout) = Layout::from_size_align(len, 16) {
+        unsafe { dealloc(ptr, layout) };
+    }
+}
+
 /// WASM export: ciphertext buffer size needed to hold a framed chunk whose
 /// plaintext is `pt_len` bytes.
 #[cfg(target_arch = "wasm32")]

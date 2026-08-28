@@ -9,6 +9,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -24,6 +25,8 @@ pub struct ServerManager {
     bind_addr: SocketAddr,
     /// Abort handle for the running server task, if any.
     server: tokio::sync::Mutex<Option<RunningServer>>,
+    /// User-preferred phone-facing port (0 = OS-assigned ephemeral).
+    preferred_port: AtomicU16,
 }
 
 struct RunningServer {
@@ -46,6 +49,7 @@ impl ServerManager {
             quarantine_dir,
             bind_addr,
             server: tokio::sync::Mutex::new(None),
+            preferred_port: AtomicU16::new(0),
         }
     }
 
@@ -63,8 +67,10 @@ impl ServerManager {
         };
         let router = app(state);
         // SEC-7: bind to the specific LAN address, never INADDR_ANY. Loopback
-        // still answers when the LAN address is used locally.
-        let listener = TcpListener::bind(self.bind_addr).await?;
+        // still answers when the LAN address is used locally. The port is the
+        // user's preferred one (Settings) when set, else OS-assigned ephemeral.
+        let port = self.preferred_port.load(Ordering::Relaxed);
+        let listener = TcpListener::bind(SocketAddr::new(self.bind_addr.ip(), port)).await?;
         let addr = listener.local_addr()?;
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -79,6 +85,17 @@ impl ServerManager {
             shutdown: Some(tx),
         });
         Ok(addr)
+    }
+
+    /// The user's preferred phone-facing port (0 = OS-assigned ephemeral).
+    pub fn preferred_port(&self) -> u16 {
+        self.preferred_port.load(Ordering::Relaxed)
+    }
+
+    /// Set the preferred phone-facing port (0 = automatic). Takes effect the
+    /// next time the server binds — live sessions keep their current port.
+    pub fn set_preferred_port(&self, port: u16) {
+        self.preferred_port.store(port, Ordering::Relaxed);
     }
 
     /// The address the server is bound to, if it is running.

@@ -68,31 +68,43 @@ fn encrypted_stream(
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
     let base = session.base_nonce;
     futures_util::stream::unfold(
-        (file, session, file_id, key, base, size, 0u64, vec![0u8; MAX_CHUNK_PLAINTEXT]),
-        move |(mut file, session, file_id, key, base, mut remaining, mut idx, mut buffer)| async move {
-            if remaining == 0 || session.is_cancelled() {
+        (file, session, file_id, key, base, size, 0u64, 0u64, vec![0u8; MAX_CHUNK_PLAINTEXT]),
+        move |(mut file, session, file_id, key, base, mut remaining, mut idx, mut eof, mut buffer)| async move {
+            // Stop when the file is fully sent, the source hit EOF, or the user
+            // cancelled — never emit an empty chunk forever.
+            if remaining == 0 || eof != 0 || session.is_cancelled() {
                 return None;
             }
             let want = remaining.min(buffer.len() as u64) as usize;
             let mut filled = 0usize;
             while filled < want {
                 match file.read(&mut buffer[filled..want]).await {
-                    Ok(0) => break, // EOF before `want`: truncated source
+                    Ok(0) => {
+                        eof = 1; // source truncated: send what we have, then stop
+                        break;
+                    }
                     Ok(n) => filled += n,
                     Err(e) => {
                         return Some((
                             Err(e),
-                            (file, session, file_id, key, base, remaining, idx, buffer),
+                            (file, session, file_id, key, base, remaining, idx, eof, buffer),
                         ))
                     }
                 }
             }
+            if filled == 0 {
+                // EOF exactly on a chunk boundary: nothing left to send.
+                return None;
+            }
 
+            if idx == 0 {
+                session.set_file_status(file_id, FileStatus::Active);
+            }
             let mut framed = Vec::with_capacity(filled + 4 + airlynk_crypto::TAG_LEN);
             if encrypt_chunk_into(&key, &base, idx, &buffer[..filled], &mut framed).is_err() {
                 return Some((
                     Err(std::io::Error::other("encrypt failed")),
-                    (file, session, file_id, key, base, remaining, idx, buffer),
+                    (file, session, file_id, key, base, remaining, idx, eof, buffer),
                 ));
             }
 
@@ -101,12 +113,12 @@ fn encrypted_stream(
             let sent = size.saturating_sub(remaining);
             session.set_file_sent(file_id, sent);
             session.touch();
-            if remaining == 0 {
+            if remaining == 0 && eof == 0 {
                 session.set_file_status(file_id, FileStatus::Done);
             }
             Some((
                 Ok(Bytes::from(framed)),
-                (file, session, file_id, key, base, remaining, idx, buffer),
+                (file, session, file_id, key, base, remaining, idx, eof, buffer),
             ))
         },
     )

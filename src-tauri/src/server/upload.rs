@@ -5,18 +5,19 @@
 //! a quarantine directory, then moves the plaintext into Downloads only on
 //! success (SEC-5). Partial or hostile uploads never appear as real files.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 use airlynk_crypto::{decrypt_chunk, CryptoError, MAX_CHUNK_PLAINTEXT, TAG_LEN};
 
 use super::resolve_session;
-use crate::safety::{collision_safe_path, sanitize_filename, SafetyError};
+use crate::safety::{reserve_collision_safe_path, sanitize_filename, SafetyError};
 use crate::session::{FileStatus, Session, SessionKind};
 
 #[derive(Serialize)]
@@ -25,6 +26,14 @@ struct UploadResult {
     name: String,
     status: &'static str,
     error: Option<String>,
+}
+
+/// One entry of the phone's upload manifest: the original file name and its
+/// plaintext size, used to reject truncated uploads before release (SEC-5).
+#[derive(Deserialize)]
+struct ManifestEntry {
+    name: String,
+    size: u64,
 }
 
 /// POST /r/<token> — accept a multipart body whose file parts are framed
@@ -41,12 +50,35 @@ pub async fn upload(
     };
 
     let mut results = Vec::new();
+    // Parse the phone's manifest (name -> plaintext size) for completeness
+    // checks. A hostile client may omit it; entries are then unknown and we
+    // accept the upload as-is (defensive default). The phone always sends it.
+    let mut manifest: HashMap<String, u64> = HashMap::new();
     loop {
         match multipart.next_field().await {
-            Ok(Some(field)) => {
+            Ok(Some(mut field)) => {
                 let Some(raw_name) = field.file_name().map(|s| s.to_string()) else {
-                    continue; // non-file fields are ignored (SEC-2: nothing is read)
+                    if field.name() == Some("manifest") {
+                        let mut buf = Vec::new();
+                        loop {
+                            match field.chunk().await {
+                                Ok(Some(c)) => {
+                                    if buf.len() + c.len() > 64 * 1024 {
+                                        break; // ignore an absurd manifest
+                                    }
+                                    buf.extend_from_slice(&c);
+                                }
+                                Ok(None) | Err(_) => break,
+                            }
+                        }
+                        if let Ok(list) = serde_json::from_slice::<Vec<ManifestEntry>>(&buf) {
+                            manifest.extend(list.into_iter().map(|e| (e.name, e.size)));
+                        }
+                    }
+                    continue; // other non-file fields are ignored (SEC-2)
                 };
+
+                let expected = manifest.get(&raw_name).copied();
                 let name = match sanitize_filename(&raw_name) {
                     Ok(n) => n,
                     Err(SafetyError::EmptyName) => {
@@ -61,7 +93,7 @@ pub async fn upload(
                     Err(_) => continue,
                 };
 
-                match receive_one(&state, &session, field, &name).await {
+                match receive_one(&state, &session, field, &name, expected).await {
                     Ok(id) => results.push(UploadResult {
                         id,
                         name,
@@ -91,6 +123,7 @@ async fn receive_one(
     session: &Arc<Session>,
     mut field: axum::extract::multipart::Field<'_>,
     name: &str,
+    expected: Option<u64>,
 ) -> Result<u32, (u32, String)> {
     if session.is_cancelled() {
         return Err((0, "session cancelled".into()));
@@ -106,47 +139,64 @@ async fn receive_one(
     let base = session.base_nonce;
     let caps = *session.caps.read().unwrap();
     let mut idx = 0u64;
-    let mut written = 0u64;
+    let mut plaintext = 0u64;
     let mut frames = FrameReader::new();
+    let mut interrupted = false;
 
-    while let Ok(Some(chunk)) = field.chunk().await {
-        if session.is_cancelled() {
-            let _ = tokio::fs::remove_file(&quarantine).await;
-            return Err((0, "session cancelled".into()));
-        }
-        written = written.saturating_add(chunk.len() as u64);
-        if written > caps.max_bytes {
-            let _ = tokio::fs::remove_file(&quarantine).await;
-            return Err((0, "upload exceeds session cap".into()));
-        }
-        match frames.push(&chunk) {
-            Ok(complete) => {
-                for frame in complete {
-                    match decrypt_chunk(&key, &base, idx, &frame) {
-                        Ok(pt) => {
-                            out.write_all(&pt).await.map_err(|e| {
-                                let _ = std::fs::remove_file(&quarantine);
-                                (0, format!("write failed: {e}"))
-                            })?;
+    loop {
+        match field.chunk().await {
+            Ok(Some(chunk)) => {
+                if session.is_cancelled() {
+                    let _ = tokio::fs::remove_file(&quarantine).await;
+                    return Err((0, "session cancelled".into()));
+                }
+                match frames.push(&chunk) {
+                    Ok(complete) => {
+                        for frame in complete {
+                            match decrypt_chunk(&key, &base, idx, &frame) {
+                                Ok(pt) => {
+                                    plaintext = plaintext.saturating_add(pt.len() as u64);
+                                    if plaintext > caps.max_bytes {
+                                        let _ = tokio::fs::remove_file(&quarantine).await;
+                                        return Err((0, "upload exceeds session cap".into()));
+                                    }
+                                    out.write_all(&pt).await.map_err(|e| {
+                                        let _ = std::fs::remove_file(&quarantine);
+                                        (0, format!("write failed: {e}"))
+                                    })?;
+                                }
+                                Err(CryptoError::Auth) => {
+                                    let _ = tokio::fs::remove_file(&quarantine).await;
+                                    return Err((0, "authentication failed".into()));
+                                }
+                                Err(CryptoError::Framing) => {
+                                    let _ = tokio::fs::remove_file(&quarantine).await;
+                                    return Err((0, "malformed stream".into()));
+                                }
+                                Err(CryptoError::Length) => unreachable!("frames are size-checked"),
+                            }
+                            idx += 1;
                         }
-                        Err(CryptoError::Auth) => {
-                            let _ = tokio::fs::remove_file(&quarantine).await;
-                            return Err((0, "authentication failed".into()));
-                        }
-                        Err(CryptoError::Framing) => {
-                            let _ = tokio::fs::remove_file(&quarantine).await;
-                            return Err((0, "malformed stream".into()));
-                        }
-                        Err(CryptoError::Length) => unreachable!("frames are size-checked"),
                     }
-                    idx += 1;
+                    Err(FrameError::Oversized) => {
+                        let _ = tokio::fs::remove_file(&quarantine).await;
+                        return Err((0, "malformed stream".into()));
+                    }
                 }
             }
-            Err(FrameError::Oversized) => {
-                let _ = tokio::fs::remove_file(&quarantine).await;
-                return Err((0, "malformed stream".into()));
+            Ok(None) => break,
+            // Transport aborted mid-file: never release a partial file.
+            Err(_) => {
+                interrupted = true;
+                break;
             }
         }
+    }
+
+    // A partial frame buffered at EOF also means the file is incomplete.
+    if interrupted || frames.has_pending() {
+        let _ = tokio::fs::remove_file(&quarantine).await;
+        return Err((0, "request interrupted — upload incomplete".into()));
     }
 
     out.flush().await.map_err(|e| {
@@ -155,21 +205,41 @@ async fn receive_one(
     })?;
     drop(out);
 
-    // Destination inside Downloads, never overwriting (FR-12, SEC-6).
-    let dest = collision_safe_path(&state.downloads_dir, name);
+    // Atomically claim a collision-free destination inside Downloads (FR-12,
+    // SEC-6). The placeholder file we create is overwritten by the move below.
+    let dest = match reserve_collision_safe_path(&state.downloads_dir, name) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&quarantine).await;
+            return Err((0, format!("cannot claim destination: {e}")));
+        }
+    };
     if let Err(e) = tokio::fs::rename(&quarantine, &dest).await {
         // Cross-volume rename fails; fall back to copy + delete so a temp dir
-        // on another drive still delivers the file.
+        // on another drive still delivers the file (overwriting our empty
+        // placeholder, not a real file).
         if let Err(e2) = tokio::fs::copy(&quarantine, &dest).await {
             let _ = tokio::fs::remove_file(&quarantine).await;
+            let _ = tokio::fs::remove_file(&dest).await;
             return Err((0, format!("move failed: {e} / {e2}")));
         }
         let _ = tokio::fs::remove_file(&quarantine).await;
     }
 
+    // SEC-5: release only complete files. A truncated body is discarded.
+    if let Some(expected) = expected {
+        if plaintext != expected {
+            let _ = tokio::fs::remove_file(&dest).await;
+            return Err((
+                0,
+                format!("file is incomplete: expected {expected} bytes, got {plaintext}"),
+            ));
+        }
+    }
+
     // Register in the manifest (SEC-10). On cap failure the file is already
     // moved — remove it so a cap-exceeded session cannot accumulate files.
-    match session.register_upload(name, written, dest.clone()) {
+    match session.register_upload(name, plaintext, dest.clone()) {
         Ok(id) => {
             session.set_file_status(id, FileStatus::Done);
             session.touch();
@@ -213,6 +283,11 @@ struct FrameReader {
 impl FrameReader {
     fn new() -> Self {
         Self { buf: Vec::new() }
+    }
+
+    /// True when an incomplete frame is buffered (a truncated stream).
+    fn has_pending(&self) -> bool {
+        !self.buf.is_empty()
     }
 
     /// Feed transport bytes; returns every complete frame (plaintext_len + TAG
@@ -262,6 +337,26 @@ mod tests {
         assert_eq!(got.len(), 1);
         let dec = decrypt_chunk(&key, &base, 0, &got[0]).unwrap();
         assert_eq!(dec, pt);
+        assert!(r.push(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn frame_reader_reports_partial_frames_as_pending() {
+        let mut r = FrameReader::new();
+        assert!(!r.has_pending());
+        // Declare a 5-byte plaintext but send only the header: pending.
+        r.push(&[0, 0, 0, 5]).unwrap();
+        assert!(r.has_pending(), "declared frame must count as pending");
+        // Complete the frame; pending must clear.
+        let key = [7u8; 32];
+        let base = [3u8; 12];
+        let pt = b"hello";
+        let mut framed = Vec::new();
+        airlynk_crypto::encrypt_chunk_into(&key, &base, 0, pt, &mut framed).unwrap();
+        let got = r.push(&framed[4..]).unwrap();
+        assert_eq!(got.len(), 1);
+        assert!(!r.has_pending());
+        // After a full stream, nothing is pending — the truncation check.
         assert!(r.push(&[]).unwrap().is_empty());
     }
 

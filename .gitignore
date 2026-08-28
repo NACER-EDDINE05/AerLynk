@@ -20,3 +20,15 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+
+# Local taste-skill clone (design reference)
+.taste-skill/
+# Local agent / tool state (never publish)
+.aider.chat.history.md
+.aider.input.history
+.claude/
+.freebuff/
+
+# Local logs
+*.log
+release-status.txt

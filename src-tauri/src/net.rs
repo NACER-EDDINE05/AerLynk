@@ -92,10 +92,65 @@ pub fn pick_lan_ipv4(ifaces: &[Interface]) -> Option<LanAddress> {
         })
 }
 
+/// The source IPv4 the OS would use to reach the public internet, discovered
+/// without sending a packet: a UDP socket "connected" to a public resolver
+/// selects the default-route interface, and `local_addr` reports that
+/// interface's address. This is by construction the same LAN segment a phone
+/// sharing the router is on — immune to VirtualBox host-only adapters, Hyper-V
+/// switches, and VPN tunnels that defeat name-based heuristics (e.g. Windows
+/// naming a VirtualBox host-only NIC generically "Ethernet 3").
+fn default_route_source_ipv4() -> Option<Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind(std::net::SocketAddr::from((
+        Ipv4Addr::UNSPECIFIED,
+        0,
+    )))
+    .ok()?;
+    // UDP connect never sends traffic; it only fixes the route. 203.0.113.1
+    // (TEST-NET-3) avoids any real resolver traffic concerns; the address is
+    // never contacted either way.
+    sock.connect(std::net::SocketAddr::from((
+        Ipv4Addr::new(203, 0, 113, 1),
+        53,
+    )))
+    .ok()?;
+    match sock.local_addr().ok()? {
+        std::net::SocketAddr::V4(v4) => {
+            let ip = *v4.ip();
+            if is_usable(ip) {
+                Some(ip)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Live enumeration + pick. The phone-facing server binds to this address
 /// (SEC-7) and the QR encodes it.
+///
+/// Strategy: prefer the address the OS itself would use to reach the internet
+/// (see `default_route_source_ipv4`) — that interface is the one sharing the
+/// router with the phone. Fall back to the name-heuristic `pick_lan_ipv4` only
+/// when the route query fails (e.g. no default route at all).
 pub fn discover_lan_ipv4() -> Result<LanAddress, NetError> {
     let ifaces = if_addrs::get_if_addrs().map_err(|e| NetError::Enumeration(e.to_string()))?;
+
+    if let Some(ip) = default_route_source_ipv4() {
+        if let Some(iface) = ifaces.iter().find(|i| matches!(&i.addr, IfAddr::V4(v4) if v4.ip == ip)) {
+            return Ok(LanAddress {
+                name: iface.name.clone(),
+                ip,
+            });
+        }
+        // The route-selected address exists even if enumeration missed it
+        // (rare); the IP is what matters for the QR and the bind.
+        return Ok(LanAddress {
+            name: "Network".to_string(),
+            ip,
+        });
+    }
+
     pick_lan_ipv4(&ifaces).ok_or(NetError::NoLanAddress)
 }
 

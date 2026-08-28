@@ -1,59 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn, Event } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 
-const generateFallbackDisplayCode = (): string => {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];
-  return `${pick()}${pick()}-${pick()}${pick()}`;
-};
-
-export interface StartSendSessionParams {
-  files: File[];
+export interface SessionFileInfo {
+  id: number;
+  originalName: string;
+  size: number;
 }
 
-export interface StartSendSessionResult {
+/** Shape returned by start_send_session / start_receive_session. */
+export interface StartSessionResult {
   token: string;
   displayCode: string;
-}
-
-export interface StartReceiveSessionResult {
-  token: string;
-  displayCode: string;
-}
-
-export interface EndSessionParams {
-  token: string;
-}
-
-export interface CancelTransferParams {
-  token: string;
-}
-
-export interface PickFilesResult {
-  files: File[];
-}
-
-export interface FirewallStatusResult {
-  status: 'clean' | 'missingAllowRule' | 'staleBlockRules' | 'unknown';
-  blocks?: string[];
-}
-
-export interface NetworkInfoResult {
-  lanIp: string;
-  interfaceName: string;
-  port: number;
-}
-
-export interface VerifyReachabilityParams {
-  addr: string;
-  iface: string;
-}
-
-export interface ReachabilityResult {
-  diagnosis: 'bound' | 'bindFailed' | 'blockedByFirewall' | 'noPhoneYet';
-  bindAddr: string;
-  interfaceName: string;
-  detail: string;
+  /** Full session URL encoded into the QR (AES key lives in the fragment). */
+  url: string;
+  qrSvg: string;
+  files: SessionFileInfo[];
 }
 
 export interface ProgressEvent {
@@ -68,25 +30,27 @@ export interface ProgressEvent {
   transferSpeed: number;
 }
 
-export const startSendSession = async (files: File[]): Promise<StartSendSessionResult> => {
-  try {
-    return await invoke<StartSendSessionResult>('start_send_session', { files });
-  } catch (error) {
-    console.warn('Tauri send session command unavailable; using mock session token.', error);
-    const displayCode = generateFallbackDisplayCode();
-    return { token: displayCode, displayCode };
-  }
-};
+export interface SessionDeliveredData {
+  token: string;
+  /** Names of the delivered files (send sources / received uploads). */
+  files?: string[];
+  bytes?: number;
+}
 
-export const startReceiveSession = async (): Promise<StartReceiveSessionResult> => {
-  try {
-    return await invoke<StartReceiveSessionResult>('start_receive_session');
-  } catch (error) {
-    console.warn('Tauri receive session command unavailable; using mock session token.', error);
-    const displayCode = generateFallbackDisplayCode();
-    return { token: displayCode, displayCode };
-  }
-};
+export interface SessionEndedData {
+  token: string;
+  cause?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+export const startSendSession = (paths: string[]): Promise<StartSessionResult> =>
+  invoke<StartSessionResult>('start_send_session', { paths });
+
+export const startReceiveSession = (): Promise<StartSessionResult> =>
+  invoke<StartSessionResult>('start_receive_session');
 
 export const endSession = (token: string): Promise<void> =>
   invoke('end_session', { token });
@@ -94,14 +58,52 @@ export const endSession = (token: string): Promise<void> =>
 export const cancelTransfer = (token: string): Promise<void> =>
   invoke('cancel_transfer', { token });
 
-export const pickFiles = async (): Promise<PickFilesResult> => {
-  try {
-    return await invoke<PickFilesResult>('pick_files');
-  } catch (error) {
-    console.warn('Tauri file picker unavailable; falling back to in-app selection.', error);
-    return { files: [] };
-  }
+// ---------------------------------------------------------------------------
+// Files / folders
+// ---------------------------------------------------------------------------
+
+export const pickFiles = async (): Promise<string[]> => {
+  const selected = await open({
+    multiple: true,
+    directory: false,
+    title: 'Select files to send',
+  });
+  if (!selected) return [];
+  return (Array.isArray(selected) ? selected : [selected]).filter(
+    (p): p is string => typeof p === 'string'
+  );
 };
+
+export const getDownloadsDir = (): Promise<string> =>
+  invoke<string>('get_downloads_dir');
+
+export const openFolder = (path: string): Promise<void> =>
+  invoke('open_folder', { path });
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export const setPreferredPort = (port: number): Promise<void> =>
+  invoke('set_preferred_port', { port });
+
+// ---------------------------------------------------------------------------
+// Network / firewall
+// ---------------------------------------------------------------------------
+
+export interface NetworkInfoResult {
+  lanIp: string;
+  interfaceName: string;
+  port: number;
+}
+
+export interface FirewallStatusResult {
+  status: 'clean' | 'missingAllowRule' | 'staleBlockRules' | 'unknown';
+  blocks?: string[];
+}
+
+export const getNetworkInfo = (): Promise<NetworkInfoResult> =>
+  invoke('get_network_info');
 
 export const checkFirewall = (): Promise<FirewallStatusResult> =>
   invoke('check_firewall');
@@ -109,24 +111,24 @@ export const checkFirewall = (): Promise<FirewallStatusResult> =>
 export const repairFirewall = (): Promise<void> =>
   invoke('repair_firewall');
 
-export const getNetworkInfo = (): Promise<NetworkInfoResult> =>
-  invoke('get_network_info');
-
-export const verifyReachability = (addr: string, iface: string): Promise<ReachabilityResult> =>
-  invoke('verify_reachability', { addr, iface });
-
-export const onMenuAction = (
-  callback: (action: 'send' | 'receive') => void
-): Promise<UnlistenFn> =>
-  listen('menu-action', (event: Event<'send' | 'receive'>) => callback(event.payload));
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
 
 export const onProgress = (callback: (progress: ProgressEvent) => void): Promise<UnlistenFn> =>
   listen('transfer-progress', (event: Event<ProgressEvent>) => callback(event.payload));
 
-export const onSessionEvent = (
-  eventName: 'session-opened' | 'session-delivered' | 'session-error' | 'session-cancelled',
-  callback: (data: { token: string; displayCode?: string; cause?: string }) => void
+export const onSessionDelivered = (
+  callback: (data: SessionDeliveredData) => void
 ): Promise<UnlistenFn> =>
-  listen(eventName, (event: Event<{ token: string; displayCode?: string; cause?: string }>) =>
-    callback(event.payload)
-  );
+  listen('session-delivered', (event: Event<SessionDeliveredData>) => callback(event.payload));
+
+export const onSessionCancelled = (
+  callback: (data: SessionEndedData) => void
+): Promise<UnlistenFn> =>
+  listen('session-cancelled', (event: Event<SessionEndedData>) => callback(event.payload));
+
+export const onSessionError = (
+  callback: (data: SessionEndedData) => void
+): Promise<UnlistenFn> =>
+  listen('session-error', (event: Event<SessionEndedData>) => callback(event.payload));

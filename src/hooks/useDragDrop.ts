@@ -1,27 +1,49 @@
-import { useState, useEffect, useCallback } from 'react';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { useState, useEffect } from 'react';
+import { listen, UnlistenFn, Event } from '@tauri-apps/api/event';
 
 export interface DragDropResult {
   isDragging: boolean;
-  onFilesDropped: (callback: (files: File[]) => void) => void;
-  clearFiles: () => void;
 }
 
-export function useDragDrop(onFilesDropped?: (files: File[]) => void): DragDropResult {
+/**
+ * File drag-and-drop for the app window.
+ *
+ * In Tauri the webview's native drag handling emits the v2 event names
+ * `tauri://drag-over` / `tauri://drag-drop` / `tauri://drag-leave`, whose drop
+ * payload carries the real filesystem paths. In a plain browser (dev) we fall
+ * back to DOM drag events that supply `File` objects.
+ */
+export function useDragDrop(
+  onPathsDropped?: (paths: string[]) => void,
+  onBrowserFilesDropped?: (files: File[]) => void
+): DragDropResult {
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
-    let unlistenDragover: UnlistenFn | undefined;
-    let unlistenDrop: UnlistenFn | undefined;
-    let unlistenDragLeave: UnlistenFn | undefined;
+    const unlisteners: UnlistenFn[] = [];
 
-    const handleDropFiles = (fileList: FileList | File[] | null | undefined) => {
-      const files = Array.from(fileList ?? []);
-      if (files.length === 0) return;
-      setIsDragging(false);
-      onFilesDropped?.(files);
+    const setup = async () => {
+      unlisteners.push(await listen('tauri://drag-over', () => setIsDragging(true)));
+      unlisteners.push(await listen('tauri://drag-enter', () => setIsDragging(true)));
+      unlisteners.push(
+        await listen('tauri://drag-leave', () => setIsDragging(false))
+      );
+      unlisteners.push(
+        await listen('tauri://drag-drop', (event: Event<{ paths?: string[] } | string[]>) => {
+          setIsDragging(false);
+          const payload = event.payload ?? [];
+          const paths = Array.isArray(payload)
+            ? payload.map(String)
+            : Array.isArray(payload.paths)
+              ? payload.paths
+              : [];
+          if (paths.length > 0) onPathsDropped?.(paths);
+        })
+      );
     };
+    void setup();
 
+    // Browser-dev fallback: plain DOM drag events hand us real File objects.
     const handleWindowDragOver = (event: DragEvent) => {
       if (event.dataTransfer && event.dataTransfer.types.includes('Files')) {
         event.preventDefault();
@@ -32,60 +54,28 @@ export function useDragDrop(onFilesDropped?: (files: File[]) => void): DragDropR
     const handleWindowDrop = (event: DragEvent) => {
       if (event.dataTransfer && event.dataTransfer.files.length > 0) {
         event.preventDefault();
-        event.stopPropagation();
-        handleDropFiles(event.dataTransfer.files);
+        setIsDragging(false);
+        onBrowserFilesDropped?.(Array.from(event.dataTransfer.files));
       }
     };
 
     const handleWindowDragLeave = (event: DragEvent) => {
-      if (event.target === window || (event.relatedTarget === null && event.target === document.body)) {
+      if (event.target === window) {
         setIsDragging(false);
       }
-    };
-
-    const setup = async () => {
-      unlistenDragover = await listen('tauri://file-drop-hover', () => {
-        setIsDragging(true);
-      });
-
-      unlistenDrop = await listen('tauri://file-drop', (event: { payload: string[] }) => {
-        const filePaths = event.payload ?? [];
-        const fileObjects = filePaths.map((path) => {
-          const name = path.split('\\').pop() || path.split('/').pop() || 'unknown';
-          return new File([], name, { type: '' });
-        });
-        onFilesDropped?.(fileObjects);
-      });
-
-      unlistenDragLeave = await listen('tauri://file-drop-cancel', () => {
-        setIsDragging(false);
-      });
     };
 
     window.addEventListener('dragover', handleWindowDragOver);
     window.addEventListener('drop', handleWindowDrop);
     window.addEventListener('dragleave', handleWindowDragLeave);
-    void setup();
 
     return () => {
+      unlisteners.forEach((u) => u?.());
       window.removeEventListener('dragover', handleWindowDragOver);
       window.removeEventListener('drop', handleWindowDrop);
       window.removeEventListener('dragleave', handleWindowDragLeave);
-      unlistenDragover?.();
-      unlistenDrop?.();
-      unlistenDragLeave?.();
     };
-  }, [onFilesDropped]);
+  }, [onPathsDropped, onBrowserFilesDropped]);
 
-  const clearFiles = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  return {
-    isDragging,
-    onFilesDropped: (callback: (files: File[]) => void) => {
-      onFilesDropped = callback;
-    },
-    clearFiles,
-  };
+  return { isDragging };
 }

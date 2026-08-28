@@ -36,7 +36,8 @@ const SELF_TEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The reachability verdict, with enough detail for the UI to render the
 /// correct failure state per FR-32.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ReachDiagnosis {
     /// Server bound and self-connect succeeded.
     /// Does NOT guarantee external reachability (see module docs).
@@ -51,7 +52,8 @@ pub enum ReachDiagnosis {
     NoPhoneYet,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReachReport {
     pub diagnosis: ReachDiagnosis,
     /// The address the server is actually listening on.

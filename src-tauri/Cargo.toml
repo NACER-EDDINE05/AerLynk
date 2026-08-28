@@ -1,6 +1,6 @@
 [package]
 name = "airlynk"
-version = "0.1.0"
+version = "0.1.1"
 description = "AirLynk — LAN file transfer wrapped in a tamper-evident sleeve"
 authors = ["AirLynk"]
 edition = "2021"

@@ -311,6 +311,24 @@ impl SessionRegistry {
         self.sessions.read().unwrap().is_empty()
     }
 
+    /// The inactivity timeout this registry uses for expiry sweeps.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Owned snapshot of all live sessions (used by the event watcher).
+    pub fn snapshot(&self) -> Vec<Arc<Session>> {
+        self.sessions.read().unwrap().clone()
+    }
+
+    /// Remove a session by id. Returns true if one was removed.
+    pub fn remove_by_id(&self, id: u64) -> bool {
+        let mut sessions = self.sessions.write().unwrap();
+        let before = sessions.len();
+        sessions.retain(|s| s.id != id);
+        sessions.len() != before
+    }
+
     pub fn len(&self) -> usize {
         self.sessions.read().unwrap().len()
     }

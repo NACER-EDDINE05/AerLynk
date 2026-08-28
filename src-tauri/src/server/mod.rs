@@ -127,15 +127,41 @@ fn nonce_js_array(base: &[u8; 12]) -> String {
 }
 
 fn shell_styles() -> &'static str {
-    r#"*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0e1116;color:#e8ecf0}
-main{max-width:760px;margin:0 auto;padding:20px 16px 28px}h1{margin:0 0 8px;font-size:22px}p{margin:0 0 12px;color:#aeb7c2}
-.chip{display:inline-block;padding:6px 10px;border:1px solid #8b939c;border-radius:999px;font-size:12px;letter-spacing:.08em}
-.card{margin-top:14px;padding:14px;border:1px solid #2f3640;border-radius:10px;background:#141920}
-.row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #232a34}
-.row:last-child{border-bottom:none}.muted{color:#8b939c;font-size:12px}
-button{border:1px solid #3b83f6;background:#3b83f6;color:#fff;padding:8px 12px;border-radius:8px;font-weight:600}
-button:disabled{opacity:.55}input[type=file]{width:100%;padding:10px;border-radius:8px;border:1px solid #2f3640;background:#0f141b;color:#e8ecf0}
-progress{width:100%;height:12px}.status{margin-top:10px;font-size:13px;line-height:1.5;white-space:pre-wrap}"#
+    r##"*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#eef2fa;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;background:radial-gradient(1100px 700px at 85% -10%,rgb(77 125 255 / 0.16),transparent 60%),radial-gradient(900px 700px at -10% 105%,rgb(0 190 255 / 0.11),transparent 55%),#06080d}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:0.04;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
+.mono{font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;font-variant-numeric:tabular-nums}
+header{max-width:560px;margin:0 auto;padding:18px 18px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px;letter-spacing:-0.01em}
+.brand .mark{width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,#4d7dff,#1fa7d9);display:inline-flex;align-items:center;justify-content:center;flex:none;box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.25),0 0 16px rgb(77 125 255 / 0.4)}
+.brand .mark svg{display:block}
+.secure{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:0.02em;color:#4cd98a;background:rgb(76 217 138 / 0.1);border:1px solid rgb(76 217 138 / 0.22);padding:4px 9px;border-radius:999px;flex:none}
+main{max-width:560px;margin:0 auto;padding:8px 18px calc(30px + env(safe-area-inset-bottom))}
+h1{margin:14px 0 4px;font-size:24px;font-weight:650;letter-spacing:-0.02em;line-height:1.2;background:linear-gradient(120deg,#f4f7ff,#9db6ea);-webkit-background-clip:text;background-clip:text;color:transparent}
+p{margin:0 0 12px;color:#a3aec2;font-size:13.5px}
+.code-chip{display:inline-block;padding:7px 14px;border:1px solid rgb(91 140 255 / 0.35);border-radius:999px;font-size:12.5px;letter-spacing:0.08em;background:rgb(91 140 255 / 0.09);color:#bcd0ff;margin:0 0 4px}
+.card{margin-top:14px;padding:16px;border:1px solid rgb(255 255 255 / 0.08);border-radius:18px;background:rgb(255 255 255 / 0.045);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.06),0 16px 48px rgb(0 0 0 / 0.45)}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid rgb(255 255 255 / 0.06)}
+.row:last-child{border-bottom:none}
+.name{min-width:0;flex:1}
+.name .t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:550}
+.name .m{display:block;color:#67728a;font-size:11.5px;margin-top:2px}
+.muted{color:#67728a;font-size:12px}
+button{border:none;background:linear-gradient(135deg,#4d7dff,#1fa7d9);color:#051028;padding:13px 16px;border-radius:12px;font-weight:650;font-size:14.5px;font-family:inherit;cursor:pointer;width:100%;transition:transform 120ms ease,filter 140ms ease,opacity 120ms ease;-webkit-user-select:none;user-select:none;box-shadow:0 2px 8px rgb(6 12 30 / 0.5),0 10px 30px rgb(47 107 255 / 0.30)}
+button:hover:not(:disabled){filter:brightness(1.08)}
+button:active:not(:disabled){transform:scale(0.97)}
+button:disabled{opacity:0.45;cursor:not-allowed}
+.row button{width:auto;padding:9px 14px;font-size:13px;border-radius:10px}
+input[type=file]{width:100%;padding:13px;border-radius:12px;border:1.5px dashed rgb(255 255 255 / 0.16);background:rgb(255 255 255 / 0.03);color:#eef2fa;font-size:13px;font-family:inherit}
+input[type=file]::file-selector-button{border:none;background:rgb(255 255 255 / 0.08);color:#eef2fa;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:550;margin-right:10px;cursor:pointer}
+progress{width:100%;height:10px;-webkit-appearance:none;appearance:none;border:none;border-radius:5px;background:rgb(255 255 255 / 0.07);overflow:hidden;margin-top:14px}
+progress::-webkit-progress-bar{background:rgb(255 255 255 / 0.07);border-radius:5px}
+progress::-webkit-progress-value{background:linear-gradient(90deg,#4d7dff,#2fd0ff);border-radius:5px;transition:width 250ms ease;box-shadow:0 0 12px rgb(77 125 255 / 0.6)}
+.status{margin-top:12px;font-size:13px;line-height:1.55;white-space:pre-wrap;color:#a3aec2}
+.status.muted{color:#67728a}
+.status.ok{color:#4cd98a}
+.status.error{color:#ff8080}
+.trust{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:18px;color:#67728a;font-size:11.5px}"##
 }
 
 fn wasm_crypto_runtime() -> &'static str {
@@ -154,53 +180,79 @@ async function loadCipher(){
   const bytes = await response.arrayBuffer();
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const e = instance.exports;
-  if(!e.memory || !e.airlynk_encrypt || !e.airlynk_decrypt) throw new Error('Invalid cipher module.');
-  const reserve = n => { const pages = Math.ceil((n + 65536) / 65536); if (e.memory.buffer.byteLength < n) e.memory.grow(Math.ceil((n - e.memory.buffer.byteLength) / 65536)); return 0; };
+  if(!e.memory || !e.airlynk_alloc || !e.airlynk_free || !e.airlynk_encrypt || !e.airlynk_decrypt) throw new Error('Invalid cipher module.');
+  // All staging memory comes from the module's OWN allocator (airlynk_alloc /
+  // airlynk_free). Never write at fixed low addresses: they clobber the
+  // module's statics, shadow stack, and allocator metadata, and the module
+  // itself allocates while hashing, so its allocator may grow linear memory
+  // at any time. Growing a WebAssembly.Memory DETACHES the ArrayBuffer behind
+  // any previously created view — so a view is created fresh at every use and
+  // never cached across a call.
+  const alloc = len => { const p = e.airlynk_alloc(len); if (!p) throw new Error('Out of cipher memory.'); return p; };
   return {
     encryptChunk(key, nonce, idx, plain){
       const outLen = e.airlynk_encrypt_len(plain.length);
-      const needed = 44 + plain.length + outLen;
-      reserve(needed);
-      const mem = new Uint8Array(e.memory.buffer);
-      const keyPtr = 0, noncePtr = 32, plainPtr = 44, outPtr = 44 + plain.length;
-      mem.set(key, keyPtr); mem.set(nonce, noncePtr); mem.set(plain, plainPtr);
-      const rc = e.airlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
-      if (rc !== 0) throw new Error('Encryption failed.');
-      return mem.slice(outPtr, outPtr + outLen);
+      const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
+      const plainPtr = alloc(plain.length), outPtr = alloc(outLen);
+      try {
+        const m = () => new Uint8Array(e.memory.buffer);
+        m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(plain, plainPtr);
+        const rc = e.airlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
+        if (rc !== 0) throw new Error('Encryption failed.');
+        return m().slice(outPtr, outPtr + outLen);
+      } finally {
+        e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
+        e.airlynk_free(plainPtr, plain.length); e.airlynk_free(outPtr, outLen);
+      }
     },
     decryptChunk(key, nonce, idx, framed){
       const outLen = e.airlynk_decrypt_len(framed.length);
       if (!outLen) throw new Error('Malformed encrypted frame.');
-      const needed = 44 + framed.length + outLen;
-      reserve(needed);
-      const mem = new Uint8Array(e.memory.buffer);
-      const keyPtr = 0, noncePtr = 32, framePtr = 44, outPtr = 44 + framed.length;
-      mem.set(key, keyPtr); mem.set(nonce, noncePtr); mem.set(framed, framePtr);
-      const rc = e.airlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr, framed.length, outPtr);
-      if (rc !== 0) throw new Error('Decryption failed. Check the QR session key.');
-      return mem.slice(outPtr, outPtr + outLen);
+      // The 4-byte plaintext-length prefix is framing, not ciphertext. The
+      // WASM ABI (see airlynk_decrypt) expects the bare ciphertext, so skip it.
+      const ctLen = framed.length - 4;
+      const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
+      const framePtr = alloc(framed.length), outPtr = alloc(outLen);
+      try {
+        const m = () => new Uint8Array(e.memory.buffer);
+        m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(framed, framePtr);
+        const rc = e.airlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, ctLen, outPtr);
+        if (rc !== 0) throw new Error('Decryption failed. Check the QR session key.');
+        return m().slice(outPtr, outPtr + outLen);
+      } finally {
+        e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
+        e.airlynk_free(framePtr, framed.length); e.airlynk_free(outPtr, outLen);
+      }
     }
   };
 }"#
 }
 
+/// Inline SVG glyphs for the phone pages — no external assets (SEC-12).
+const PHONE_MARK_SVG: &str = "<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 16.5 12 5l7 11.5M7.6 12.4h8.8\"/></svg>";
+const PHONE_LOCK_SVG: &str = "<svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/></svg>";
+const PHONE_SHIELD_SVG: &str = "<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3 5 6v5c0 4.5 3 8.2 7 9.5 4-1.3 7-5 7-9.5V6l-7-3Z\"/></svg>";
+
 fn render_send_page(token: &str, display_code: &str, files_b64: &str, nonce: &str) -> String {
     format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AirLynk</title><style>{styles}</style></head>
-<body><main><h1>Download from AirLynk</h1><p>Session code</p><p class="chip">{code}</p>
-<div class="card"><div id="list"></div><div id="status" class="status muted">Pick a file to download and decrypt on this phone.</div></div></main>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AirLynk</title><style>{styles}</style></head>
+<body><header><span class="brand"><span class="mark">{mark}</span>AirLynk</span><span class="secure">{lock} Encrypted</span></header>
+<main><h1>Download from AirLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
+<div class="card"><div id="list"></div><div id="status" class="status muted">Pick a file to download and decrypt on this phone.</div></div>
+<div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
 <script>
 const TOKEN = "{token}";
 const NONCE = new Uint8Array([{nonce}]);
 const FILES = JSON.parse(atob("{files_b64}"));
-const fmt = n => n < 1024 ? `${{n}} B` : n < 1024*1024 ? `${{(n/1024).toFixed(1)}} KB` : `${{(n/1024/1024).toFixed(1)}} MB`;
+const fmt = n => n < 1024 ? `${{n}} B` : n < 1024*1024 ? `${{(n/1024).toFixed(1)}} KB` : n < 1024*1024*1024 ? `${{(n/1024/1024).toFixed(1)}} MB` : `${{(n/1024/1024/1024).toFixed(2)}} GB`;
 {runtime}
 const statusEl = document.getElementById('status');
 const listEl = document.getElementById('list');
-function setStatus(text, muted=false){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':''); }}
+function setStatus(text, muted=false, tone=''){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':'')+(tone?' '+tone:''); }}
 for (const f of FILES) {{
   const row = document.createElement('div'); row.className='row';
-  const left = document.createElement('div'); left.innerHTML = `<div>${{f.name}}</div><div class="muted">${{fmt(f.size)}}</div>`;
+  const left = document.createElement('div'); left.className='name';
+  left.innerHTML = `<span class="t">${{f.name}}</span><span class="m">${{fmt(f.size)}}</span>`;
   const btn = document.createElement('button'); btn.textContent='Download'; btn.onclick=() => downloadFile(f, btn);
   row.append(left, btn); listEl.append(row);
 }}
@@ -235,27 +287,32 @@ async function downloadFile(file, btn) {{
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = file.name; a.click();
     URL.revokeObjectURL(url);
-    setStatus(`Downloaded ${{file.name}} successfully.`);
+    setStatus(`Downloaded ${{file.name}} successfully.`, false, 'ok');
   }} catch (e) {{
-    setStatus(e?.message || 'Download failed.');
+    setStatus(e?.message || 'Download failed.', false, 'error');
   }} finally {{ btn.disabled = false; }}
 }}
-</script></body></html>"#,
+</script></body></html>"##,
         styles = shell_styles(),
         code = display_code,
         token = token,
         nonce = nonce,
         files_b64 = files_b64,
-        runtime = wasm_crypto_runtime()
+        runtime = wasm_crypto_runtime(),
+        mark = PHONE_MARK_SVG,
+        lock = PHONE_LOCK_SVG,
+        shield = PHONE_SHIELD_SVG
     )
 }
 
 fn render_receive_page(token: &str, display_code: &str, nonce: &str) -> String {
     format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AirLynk</title><style>{styles}</style></head>
-<body><main><h1>Upload to AirLynk</h1><p>Session code</p><p class="chip">{code}</p>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AirLynk</title><style>{styles}</style></head>
+<body><header><span class="brand"><span class="mark">{mark}</span>AirLynk</span><span class="secure">{lock} Encrypted</span></header>
+<main><h1>Upload to AirLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
 <div class="card"><input id="picker" type="file" multiple><div style="height:10px"></div><button id="send">Upload selected files</button>
-<div style="height:10px"></div><progress id="progress" max="100" value="0"></progress><div id="status" class="status muted">Select files, then upload.</div></div></main>
+<div style="height:10px"></div><progress id="progress" max="100" value="0"></progress><div id="status" class="status muted">Select files, then upload.</div></div>
+<div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
 <script>
 const TOKEN = "{token}";
 const NONCE = new Uint8Array([{nonce}]);
@@ -265,7 +322,7 @@ const picker = document.getElementById('picker');
 const send = document.getElementById('send');
 const progress = document.getElementById('progress');
 const statusEl = document.getElementById('status');
-function setStatus(text, muted=false){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':''); }}
+function setStatus(text, muted=false, tone=''){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':'')+(tone?' '+tone:''); }}
 async function encryptFile(file, key, cipher) {{
   const raw = new Uint8Array(await file.arrayBuffer());
   const parts = []; let idx = 0;
@@ -283,6 +340,9 @@ send.onclick = async () => {{
     const key = decodeKeyFromHash();
     const cipher = await loadCipher();
     const form = new FormData();
+    // Names + plaintext sizes let the PC verify every upload is complete
+    // before releasing it from quarantine (SEC-5, FR-12).
+    form.append('manifest', JSON.stringify(Array.from(picker.files).map(f => ({{ name: f.name, size: f.size }}))));
     for (const file of picker.files) {{
       setStatus(`Encrypting ${{file.name}}...`, true);
       const encrypted = await encryptFile(file, key, cipher);
@@ -297,19 +357,22 @@ send.onclick = async () => {{
       xhr.onerror = () => reject(new Error('Upload failed.'));
       xhr.send(form);
     }});
-    setStatus('Upload finished. You can close this page now.');
+    setStatus('Upload finished. You can close this page now.', false, 'ok');
   }} catch (e) {{
-    setStatus(e?.message || 'Upload failed.');
+    setStatus(e?.message || 'Upload failed.', false, 'error');
   }} finally {{
     send.disabled = false;
   }}
 }};
-</script></body></html>"#,
+</script></body></html>"##,
         styles = shell_styles(),
         code = display_code,
         token = token,
         nonce = nonce,
-        runtime = wasm_crypto_runtime()
+        runtime = wasm_crypto_runtime(),
+        mark = PHONE_MARK_SVG,
+        lock = PHONE_LOCK_SVG,
+        shield = PHONE_SHIELD_SVG
     )
 }
 

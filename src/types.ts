@@ -1,6 +1,8 @@
-export type SessionKind = 'send' | 'receive';
+export type View = 'send' | 'receive' | 'history' | 'settings';
 
-export type FileStatus = 'pending' | 'active' | 'done' | 'skipped' | 'failed';
+export type TransferPhase = 'idle' | 'ready' | 'transferring' | 'done' | 'error';
+
+export type FileStatus = 'pending' | 'active' | 'done' | 'failed';
 
 export interface SessionFile {
   id: number;
@@ -8,111 +10,33 @@ export interface SessionFile {
   size: number;
   sentBytes: number;
   status: FileStatus;
-  progress?: number;
-  error?: string;
 }
 
-export interface Session {
-  id: number;
-  token: string;
-  displayCode: string;
-  kind: SessionKind;
-  key: Uint8Array;
-  baseNonce: Uint8Array;
-  files: SessionFile[];
-  uploadCount: number;
-  uploadBytes: number;
-  cancelled: boolean;
-  lastActivity: number;
-  created: number;
+export interface HistoryEntry {
+  id: string;
+  kind: 'send' | 'receive';
+  fileNames: string[];
+  totalBytes: number;
+  status: 'completed' | 'cancelled' | 'failed';
+  timestamp: number;
 }
 
-export type SleeveState =
-  | 'unsealed'
-  | 'staged'
-  | 'sealed'
-  | 'transferring'
-  | 'delivered'
-  | 'receive'
-  | 'failure';
+export type ThemePreference = 'light' | 'dark' | 'system';
 
-export interface SealBandProps {
-  status: SleeveState;
-  displayCode?: string;
-  itemCount: number;
-  byteTotal: number;
-  progress?: {
-    current: number;
-    total: number;
-    speed?: string;
-  };
-  onClose: () => void;
-  onFlip: () => void;
-  onSeal?: () => void;
+export interface Settings {
+  theme: ThemePreference;
+  alwaysOnTop: boolean;
+  /** Preferred phone-facing port; 0 = OS-assigned ephemeral. */
+  port: number;
 }
-
-export interface SleeveProps {
-  state: SleeveState;
-  files: SessionFile[];
-  displayCode?: string;
-  byteTotal: number;
-  progress?: {
-    current: number;
-    total: number;
-    speed?: string;
-  };
-  activeFileId?: number;
-  onSeal: () => void;
-  onFlip: () => void;
-  onProgress: (progress: { current: number; total: number; speed?: string }) => void;
-  onDelivered: () => void;
-  onClose: () => void;
-  qrCodeSvg?: string;
-  failureCause?: string;
-}
-
-export interface ContentsProps {
-  files: SessionFile[];
-  activeFileId?: number;
-}
-
-export interface RowProps {
-  file: SessionFile;
-  isActive: boolean;
-}
-
-export interface LabelFaceProps {
-  qrCodeSvg: string;
-  displayCode: string;
-  fileName?: string;
-  progress?: { current: number; total: number; speed?: string };
-  onClose: () => void;
-}
-
-export interface VoidWashProps {
-  cause: string;
-  onRetry: () => void;
-  onDismiss: () => void;
-}
-
-export type ReachDiagnosis = 'bound' | 'bindFailed' | 'blockedByFirewall' | 'noPhoneYet';
 
 export type FirewallStatus = 'clean' | 'missingAllowRule' | 'staleBlockRules' | 'unknown';
 
-export interface ReachReport {
-  diagnosis: ReachDiagnosis;
-  bindAddr: string;
-  interfaceName: string;
-  detail: string;
-}
-
-export interface FirewallReport {
-  status: FirewallStatus;
-  blocks?: string[];
-}
-
-export interface NetworkInfo {
-  lanIp: string;
-  interfaceName: string;
-  port: number;
+export interface NetworkStatus {
+  lanIp?: string;
+  interfaceName?: string;
+  port?: number;
+  firewall: FirewallStatus;
+  firewallBlocks?: string[];
+  error?: string;
 }

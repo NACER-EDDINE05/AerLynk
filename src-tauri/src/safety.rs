@@ -142,6 +142,43 @@ pub fn collision_safe_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{stem} ({nanos}){ext}"))
 }
 
+/// FR-12 + SEC-6: atomically claim a collision-free destination inside `dir`
+/// by creating an empty placeholder with `create_new(true)` (O_EXCL). Two
+/// concurrent uploads of the same name cannot both win — exactly one gets
+/// `photo.jpg`, the other falls through to `photo (1).jpg`. This closes the
+/// check-then-rename TOCTOU race of `collision_safe_path` alone.
+///
+/// `name` must already be sanitized. On success the caller owns an empty file
+/// at the returned path and should move/copy the quarantined upload over it.
+pub fn reserve_collision_safe_path(dir: &Path, name: &str) -> std::io::Result<PathBuf> {
+    use std::fs::OpenOptions;
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
+        _ => (name.to_string(), String::new()),
+    };
+    for n in 0..10_000u32 {
+        let candidate_name = if n == 0 {
+            name.to_string()
+        } else {
+            format!("{stem} ({n}){ext}")
+        };
+        let candidate = dir.join(&candidate_name);
+        match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+            Ok(_) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    // Unreachable in practice; same nanos fallback as `collision_safe_path`.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let candidate = dir.join(format!("{stem} ({nanos}){ext}"));
+    OpenOptions::new().write(true).create_new(true).open(&candidate)?;
+    Ok(candidate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +341,39 @@ mod tests {
         std::fs::write(root.join("README"), b"x").unwrap();
         let p = collision_safe_path(&root, "README");
         assert_eq!(p, root.join("README (1)"));
+    }
+
+    #[test]
+    fn reserve_collision_safe_path_claims_and_increments() {
+        let root = tmp_root();
+        let a = reserve_collision_safe_path(&root, "photo.jpg").unwrap();
+        assert_eq!(a, root.join("photo.jpg"));
+        let b = reserve_collision_safe_path(&root, "photo.jpg").unwrap();
+        assert_eq!(b, root.join("photo (1).jpg"));
+        // Both reservations own a real file — the O_EXCL placeholder.
+        assert!(a.exists() && b.exists());
+        assert_eq!(std::fs::read(&a).unwrap(), b"");
+        let c = reserve_collision_safe_path(&root, "photo.jpg").unwrap();
+        assert_eq!(c, root.join("photo (2).jpg"));
+    }
+
+    #[test]
+    fn reserve_collision_safe_path_respects_existing_files() {
+        let root = tmp_root();
+        std::fs::write(root.join("report.txt"), b"existing").unwrap();
+        let p = reserve_collision_safe_path(&root, "report.txt").unwrap();
+        assert_eq!(p, root.join("report (1).txt"));
+        // The pre-existing file must be left untouched.
+        assert_eq!(std::fs::read(root.join("report.txt")).unwrap(), b"existing");
+    }
+
+    #[test]
+    fn reserve_collision_safe_path_handles_extensionless() {
+        let root = tmp_root();
+        let a = reserve_collision_safe_path(&root, "README").unwrap();
+        assert_eq!(a, root.join("README"));
+        let b = reserve_collision_safe_path(&root, "README").unwrap();
+        assert_eq!(b, root.join("README (1)"));
     }
 
     #[test]

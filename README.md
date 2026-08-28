@@ -10,7 +10,24 @@ Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, an
 ![Stack](https://img.shields.io/badge/Stack-Tauri%202%20%7C%20React%2019%20%7C%20Rust-24c8db?style=flat-square)
 ![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-4caf50?style=flat-square)
 ![Network](https://img.shields.io/badge/Network-LAN%20only-ff9800?style=flat-square)
-![Version](https://img.shields.io/badge/Version-0.1.0-9e9e9e?style=flat-square)
+![Version](https://img.shields.io/badge/Version-0.1.1-9e9e9e?style=flat-square)
+![Downloads](https://img.shields.io/badge/-Download_0.1.1-3e63dd?style=flat-square&logo=windows&logoColor=white&label=)
+
+---
+
+## Download (Windows)
+
+> **Requirements:** Windows 10 or 11 with [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 11 and updated Windows 10).
+
+| What | File |
+| --- | --- |
+| **Installer** (recommended) | `AirLynk_<version>_x64-setup.exe` — available on the [Releases page](https://github.com/NACER1-EDDINE/AirLynk/releases) |
+| MSI package | `AirLynk_<version>_x64_en-US.msi` — for managed/enterprise deployment |
+| Portable | `airlynk.exe` — standalone, no installation required |
+
+**First run:** if your firewall blocks the transfer, AirLynk detects it and shows **"Firewall is blocking AirLynk → Repair now"** in the sidebar. One click adds the correct inbound rule (a Windows prompt appears — accept it).
+
+**Updating:** run the newer installer over an existing install — it upgrades in place and keeps your settings.
 
 ---
 
@@ -22,8 +39,8 @@ Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, an
 - **Both directions.** Send files from the PC to the phone, or from the phone to the PC.
 - **Multi-gigabyte files.** Streams with bounded memory — files are never buffered whole.
 - **Smart LAN discovery.** Picks the real adapter and filters virtual ones (VPNs, WSL, Hyper-V, Docker, …), so the QR code always points somewhere reachable.
-- **First-run wizard.** Checks network reachability and Windows Firewall, and can repair the required allow rule.
 - **Upload safety.** In-flight uploads land in a quarantine folder, are decrypted and authenticated before release, never overwrite existing files, and hostile filenames are sanitized.
+- **Firewall self-healing.** Detects a missing or stale Windows Firewall rule (including rules pointing at an old install path) and repairs it with one click.
 
 ---
 
@@ -142,8 +159,8 @@ stateDiagram-v2
 
 | Layer | Technology |
 | --- | --- |
-| Desktop shell | [Tauri 2](https://tauri.app) (frameless, transparent window with Mica effect) |
-| Frontend | React 19 · TypeScript 5.8 · Vite 7 · Tailwind CSS 4 · Framer Motion |
+| Desktop shell | [Tauri 2](https://tauri.app) (WebView2) |
+| Frontend | React 19 · TypeScript 5.8 · Vite 7 · Tailwind CSS 4 · CSS motion |
 | Backend | Rust (tokio + axum) embedded HTTP server |
 | Crypto | `airlynk-crypto` — AES-256-GCM chunked streaming, native **and** `wasm32` |
 | Phone client | Self-contained mobile page + WebAssembly cipher, served from the desktop |
@@ -156,9 +173,10 @@ stateDiagram-v2
 ```
 airlynk/
 ├── src/                      # React UI (Tauri webview)
-│   ├── components/           # Sleeve, SealBand, VoidWash, LabelFace, FirstRun wizard
-│   ├── hooks/                # drag-drop, keyboard, reduced-motion
-│   └── lib/                  # IPC bridge, tokens, state machine, mock data
+│   ├── components/           # Sidebar, QrCard, Dropzone, FileList, Icons
+│   ├── hooks/                # transfer, drag-drop, settings, history, network, spotlight
+│   ├── views/                # SendView, ReceiveView, HistoryView, SettingsView
+│   └── lib/                  # IPC bridge, formatting
 ├── src-tauri/                # Rust desktop backend (Tauri 2)
 │   ├── src/
 │   │   ├── server/           # axum HTTP server: pages, download, upload, assets
@@ -166,12 +184,14 @@ airlynk/
 │   │   ├── net.rs            # LAN IPv4 discovery (filters virtual adapters)
 │   │   ├── firewall.rs       # Windows Firewall check / repair
 │   │   ├── safety.rs         # filename sanitization, quarantine handling
+│   │   ├── reachability.rs   # self-test + phone-reachability diagnostics
+│   │   ├── commands.rs       # Tauri IPC command layer
 │   │   └── server_manager.rs # server lifecycle
 │   └── build.rs              # compiles the wasm cipher into the binary
 ├── crates/airlynk-crypto/    # AES-256-GCM chunked cipher (native + wasm32)
-├── scripts/                  # native ↔ wasm byte-for-byte cross-check
+├── scripts/                  # native ↔ wasm byte-for-byte cross-check + runtime sim
 ├── installer/                # firewall helper script (bundled)
-└── public/                   # static assets
+└── public/                   # fonts, logo source, static assets
 ```
 
 ---
@@ -229,4 +249,10 @@ cargo test -p airlynk -- --ignored
 
 ## Status
 
-AirLynk is at **v0.1.0**. The end-to-end encrypted send and receive flows work over a real LAN; the UI metaphor — a tamper-evident sleeve that seals around a transfer — is in place, and the phone pages are functional shells on the way to their full experience.
+AirLynk is at **v0.1.1** — the end-to-end encrypted send and receive flows work over a real LAN. The desktop UI ships a dark, glassy "atmosphere" design with QR-pairing, live progress, and a history of past transfers; the phone pages are a polished, fully self-contained client (branded header, session code, live progress, trust footer) that works in any mobile browser.
+
+---
+
+## Credits
+
+Made by **NACEREDDINE**. Your name in the credits is the only "account" you will ever need in AirLynk — there are none.

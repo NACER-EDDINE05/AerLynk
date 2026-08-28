@@ -44,18 +44,49 @@ pub enum FirewallStatus {
 // Detection (no elevation needed)
 // ---------------------------------------------------------------------------
 
-/// Check whether the AirLynk allow rule exists.
+/// Check whether an Allow rule exists **and** targets this exact executable.
 ///
-/// Uses `Get-NetFirewallRule -ErrorAction SilentlyContinue`; an empty result
-/// means the rule is missing. Does not need elevation.
+/// The rule must match by DisplayName *and* by its Program filter. A rule
+/// pointing at a stale path (project moved, target dir rebuilt elsewhere,
+/// app reinstalled) silently stops matching the running binary while still
+/// passing a name-only check — the phone would hang forever while the UI
+/// reported "clean". Comparison is case-insensitive (Windows paths are not
+/// case-sensitive) after trimming PowerShell's trailing CRLF. An empty
+/// Program filter means the rule covers any program, which also matches.
+///
+/// Uses `Get-NetFirewallRule`; a missing rule yields the sentinel. Does not
+/// need elevation.
 pub fn allow_rule_exists() -> bool {
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if exe.is_empty() {
+        return false;
+    }
     let result = run_ps_script(&format!(
-        r#"(Get-NetFirewallRule -DisplayName "{ALLOW_RULE_NAME}" -ErrorAction SilentlyContinue).DisplayName"#
+        r#"$r = Get-NetFirewallRule -DisplayName "{ALLOW_RULE_NAME}" -ErrorAction SilentlyContinue; if ($r) {{ ($r | Get-NetFirewallApplicationFilter).Program }} else {{ '{NO_RULE_SENTINEL}' }}"#
     ));
     match result {
-        Ok(out) => !out.trim().is_empty(),
+        Ok(out) => !out.contains(NO_RULE_SENTINEL) && program_matches(&out, &exe),
         Err(_) => false,
     }
+}
+
+/// Sentinel returned by the detection script when no rule with the canonical
+/// DisplayName exists — distinguishes "no rule" from "rule with no Program
+/// filter" (the latter means the rule allows any program and matches).
+const NO_RULE_SENTINEL: &str = "__airlynk-no-rule__";
+
+/// True when a firewall rule's Program filter covers `exe`. Pure decision
+/// core, unit-tested: an empty filter means "any program"; anything else must
+/// equal the exe path case-insensitively. An empty `exe` can never be
+/// verified, so it never matches.
+fn program_matches(rule_program: &str, exe: &str) -> bool {
+    if exe.trim().is_empty() {
+        return false;
+    }
+    let rule = rule_program.trim().to_ascii_lowercase();
+    rule.is_empty() || rule == exe.trim().to_ascii_lowercase()
 }
 
 /// Find stale **Block** rules that target AirLynk.
@@ -254,6 +285,33 @@ mod tests {
             FirewallStatus::StaleBlockRules { names } => assert_eq!(names, vec!["A", "B", "C"]),
             other => panic!("expected StaleBlockRules, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn program_matches_any_program_rule() {
+        assert!(program_matches("", "C:\\apps\\airlynk.exe"));
+        assert!(program_matches("   ", "C:\\apps\\airlynk.exe"));
+    }
+
+    #[test]
+    fn program_matches_is_case_insensitive_and_trimmed() {
+        assert!(program_matches(" C:\\X\\A.EXE \r\n", "c:\\x\\a.exe"));
+    }
+
+    #[test]
+    fn program_matches_rejects_stale_program_path() {
+        // The project moved from C:\ to P:\ — the old rule's Program filter
+        // no longer covers the running binary and detection must say so.
+        assert!(!program_matches(
+            "C:\\Users\\hp\\AirLynk\\target\\debug\\airlynk.exe",
+            "P:\\AirLynk\\target\\debug\\airlynk.exe",
+        ));
+    }
+
+    #[test]
+    fn program_matches_rejects_unverifiable_exe() {
+        assert!(!program_matches("", ""));
+        assert!(!program_matches("C:\\apps\\airlynk.exe", "  "));
     }
 
     // Integration tests that touch PowerShell are environment-dependent.
