@@ -80,10 +80,17 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/appimage/*.AppImage
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
 
       # Attach the bundles to a GitHub Release. Two ways in:
       #   1. A version tag push (v*) -> tag name decides the release.
       #   2. A manual workflow_dispatch with release_tag set.
+      # The rust-cache workspaces mapping may redirect builds to the repo-root
+      # `target/` dir, so we probe BOTH roots.
       - name: Attach bundles to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release_tag != ''
         env:
@@ -96,14 +103,16 @@ jobs:
             gh release create "$TAG" --title "AirLynk $TAG" || true
           fi
           add() {
-            local dir="$1" glob="$2"
-            if ls "$dir"/$glob >/dev/null 2>&1; then
-              gh release upload "$TAG" "$dir"/$glob --clobber
+            local root="$1" sub="$2" glob="$3"
+            if ls "$root/release/bundle/$sub"/$glob >/dev/null 2>&1; then
+              gh release upload "$TAG" "$root/release/bundle/$sub"/$glob --clobber
             fi
           }
-          add src-tauri/target/release/bundle/nsis "*.exe"
-          add src-tauri/target/release/bundle/msi "*.msi"
-          add src-tauri/target/release/bundle/deb "*.deb"
-          add src-tauri/target/release/bundle/rpm "*.rpm"
-          add src-tauri/target/release/bundle/appimage "*.AppImage"
+          for root in src-tauri/target target; do
+            add "$root" nsis "*.exe"
+            add "$root" msi "*.msi"
+            add "$root" deb "*.deb"
+            add "$root" rpm "*.rpm"
+            add "$root" appimage "*.AppImage"
+          done
           echo "Attached bundles to release $TAG"
