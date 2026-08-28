@@ -16,6 +16,7 @@ use base64::Engine as _;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+#[cfg(target_os = "windows")]
 use crate::firewall::{self, FirewallStatus};
 use crate::net;
 use crate::qr;
@@ -244,6 +245,7 @@ pub async fn verify_reachability(
     }
 }
 
+#[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn check_firewall() -> FirewallStatusResult {
     match firewall::status() {
@@ -266,10 +268,29 @@ pub fn check_firewall() -> FirewallStatusResult {
     }
 }
 
+#[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn repair_firewall() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     firewall::repair(exe.to_str().unwrap_or("")).map_err(|e| e.to_string())
+}
+
+/// Non-Windows platforms have no program-scoped firewall rule to manage, so
+/// the status is simply "clean" and repair is a no-op. The UI then shows the
+/// healthy state without ever calling into PowerShell.
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn check_firewall() -> FirewallStatusResult {
+    FirewallStatusResult {
+        status: "clean",
+        blocks: None,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn repair_firewall() -> Result<(), String> {
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

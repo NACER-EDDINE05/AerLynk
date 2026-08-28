@@ -17,12 +17,26 @@ use tauri::{Manager, WindowEvent};
 use commands::{TauriState, watch_sessions};
 use session::SessionRegistry;
 
-/// The user's Downloads folder on Windows (typical layout). The app never
-/// writes outside Downloads + its own app-data dir.
+/// The user's Downloads folder (typical layout). Windows uses %USERPROFILE%,
+/// Linux uses $HOME. The app never writes outside Downloads + its own
+/// app-data dir.
 fn known_downloads_dir() -> Option<PathBuf> {
-    std::env::var("USERPROFILE")
-        .ok()
-        .map(|home| PathBuf::from(home).join("Downloads"))
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(|home| PathBuf::from(home).join("Downloads"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join("Downloads"))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        None
+    }
 }
 
 pub fn run() {

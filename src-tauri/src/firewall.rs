@@ -9,6 +9,11 @@
 //! objects and is consistent across Windows locales — unlike netsh text
 //! parsing. The repair path (deleting/creating rules) requires elevation and
 //! requests UAC from the app with the user's explicit consent.
+//!
+//! This module is Windows-only: Linux and macOS have no program-scoped
+//! firewall rule to manage, so the module compiles to nothing there and
+//! `commands.rs` supplies a graceful no-op status.
+#![cfg(target_os = "windows")]
 
 use std::process::Command;
 

@@ -23,11 +23,25 @@ Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, an
 | --- | --- |
 | **Installer** (recommended) | `AirLynk_<version>_x64-setup.exe` — available on the [Releases page](https://github.com/NACER1-EDDINE/AirLynk/releases) |
 | MSI package | `AirLynk_<version>_x64_en-US.msi` — for managed/enterprise deployment |
-| Portable | `airlynk.exe` — standalone, no installation required |
+| Portable | `AirLynk_<version>_x64_portable.exe` — standalone, no installation required |
 
 **First run:** if your firewall blocks the transfer, AirLynk detects it and shows **"Firewall is blocking AirLynk → Repair now"** in the sidebar. One click adds the correct inbound rule (a Windows prompt appears — accept it).
 
 **Updating:** run the newer installer over an existing install — it upgrades in place and keeps your settings.
+
+## Linux (Fedora / Ubuntu / Debian)
+
+> **Requirements:** a desktop environment with **WebKitGTK 4.1** (Fedora: `sudo dnf install webkit2gtk4.1` — most desktop installs already have it).
+
+| What | File |
+| --- | --- |
+| **RPM** (Fedora / RHEL) | `AirLynk_<version>_amd64.rpm` — install with `sudo dnf install ./AirLynk_*.rpm` |
+| **AppImage** (any distro) | `AirLynk_<version>_amd64.AppImage` — download, `chmod +x`, double-click to run |
+| DEB (Ubuntu / Debian) | `AirLynk_<version>_amd64.deb` — `sudo apt install ./AirLynk_*.deb` |
+
+On Fedora the RPM is the smoothest path; the AppImage works on every distro (if it will not launch, run it with `--appimage-extract-and-run`). Firewall handling is automatic — Linux has no program-scoped firewall rule to configure.
+
+> **Note:** Linux artifacts are built automatically by the project's CI on every version tag. Releases tagged **v0.1.1 and earlier** predate the Linux pipeline — grab a newer release or a build from the [Actions](https://github.com/NACER1-EDDINE/AirLynk/actions) page.
 
 ---
 
