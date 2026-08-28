@@ -6,7 +6,7 @@ AirLynk is a desktop app that moves files between a PC and any phone **on the sa
 
 Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, and the session key travels only inside the QR code itself — it is never sent to the server, never logged, and never stored.
 
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=flat-square)
 ![Stack](https://img.shields.io/badge/Stack-Tauri%202%20%7C%20React%2019%20%7C%20Rust-24c8db?style=flat-square)
 ![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-4caf50?style=flat-square)
 ![Network](https://img.shields.io/badge/Network-LAN%20only-ff9800?style=flat-square)
@@ -40,8 +40,6 @@ Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, an
 | DEB (Ubuntu / Debian) | `AirLynk_<version>_amd64.deb` — `sudo apt install ./AirLynk_*.deb` |
 
 On Fedora the RPM is the smoothest path; the AppImage works on every distro (if it will not launch, run it with `--appimage-extract-and-run`). Firewall handling is automatic — Linux has no program-scoped firewall rule to configure.
-
-> **Note:** Linux artifacts are built automatically by the project's CI on every version tag. Releases tagged **v0.1.1 and earlier** predate the Linux pipeline — grab a newer release or a build from the [Actions](https://github.com/NACER1-EDDINE/AirLynk/actions) page.
 
 ---
 
@@ -178,7 +176,7 @@ stateDiagram-v2
 | Backend | Rust (tokio + axum) embedded HTTP server |
 | Crypto | `airlynk-crypto` — AES-256-GCM chunked streaming, native **and** `wasm32` |
 | Phone client | Self-contained mobile page + WebAssembly cipher, served from the desktop |
-| Platform | Windows (firewall integration, WebView2) |
+| Platform | Windows (firewall integration, WebView2) · Linux (WebKitGTK 4.1, rpm/deb/AppImage) |
 
 ---
 
