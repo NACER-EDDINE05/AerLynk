@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use airlynk_crypto::{generate_key, NONCE_LEN};
+use aerlynk_crypto::{generate_key, NONCE_LEN};
 use subtle::ConstantTimeEq;
 
 /// Unambiguous display alphabet — no 0/O, no 1/I/L (FR-26).
@@ -388,7 +388,7 @@ mod tests {
     use super::*;
 
     fn tmp_dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("airlynk-session-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("aerlynk-session-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

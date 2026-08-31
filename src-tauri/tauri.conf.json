@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AirLynk",
+  "productName": "AerLynk",
   "version": "0.1.1",
-  "identifier": "com.airlynk.app",
+  "identifier": "com.aerlynk.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AirLynk",
+        "title": "AerLynk",
         "width": 960,
         "height": 640,
         "minWidth": 720,

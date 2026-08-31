@@ -1,16 +1,16 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-  Provisions the AirLynk inbound Windows Firewall rule before first launch (FR-28).
+  Provisions the AerLynk inbound Windows Firewall rule before first launch (FR-28).
 .DESCRIPTION
   Creates a program-scoped Allow rule so the user never meets the Windows Firewall
   prompt during normal use. Program scope means ephemeral-port fallback needs no
   second rule. Must run elevated — called by the signed installer, never by the app
   itself directly.
 .PARAMETER ProgramPath
-  Full path to airlynk.exe. Required.
+  Full path to aerlynk.exe. Required.
 .EXAMPLE
-  .\firewall.ps1 -ProgramPath "C:\Program Files\AirLynk\airlynk.exe"
+  .\firewall.ps1 -ProgramPath "C:\Program Files\AerLynk\aerlynk.exe"
 #>
 
 param(
@@ -19,7 +19,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ruleName = "AirLynk (inbound LAN)"
+$ruleName = "AerLynk (inbound LAN)"
 
 # Idempotent: remove any prior rule with this name so a re-run or upgrade
 # never creates duplicate rules.
@@ -29,7 +29,7 @@ Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
 # writes one when the user dismisses the prompt, and Block takes precedence
 # over any Allow added later (FR-29).
 $staleBlocks = Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue |
-    Where-Object { $_.Program -and ($_.Program -eq $ProgramPath -or $_.Program -like "*airlynk*") }
+    Where-Object { $_.Program -and ($_.Program -eq $ProgramPath -or $_.Program -like "*aerlynk*") }
 foreach ($rule in $staleBlocks) {
     Write-Host "Removing stale block rule: $($rule.DisplayName)"
     Remove-NetFirewallRule -DisplayName $rule.DisplayName -ErrorAction SilentlyContinue
@@ -37,7 +37,7 @@ foreach ($rule in $staleBlocks) {
 
 New-NetFirewallRule `
     -DisplayName $ruleName `
-    -Description "Allows AirLynk to accept incoming file transfers from phones on the local network" `
+    -Description "Allows AerLynk to accept incoming file transfers from phones on the local network" `
     -Direction Inbound `
     -Program $ProgramPath `
     -Protocol TCP `

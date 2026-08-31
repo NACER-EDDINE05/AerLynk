@@ -122,12 +122,12 @@ export const RefreshIcon = (p: IconProps) => (
 export const LogoIcon = (p: IconProps) => (
   <svg width={p.size ?? 22} height={p.size ?? 22} viewBox="0 0 32 32" fill="none" aria-hidden>
     <defs>
-      <linearGradient id="airlynk-mark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <linearGradient id="aerlynk-mark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
         <stop stopColor="#4d7dff" />
         <stop offset="1" stopColor="#1fa7d9" />
       </linearGradient>
     </defs>
-    <rect width="32" height="32" rx="9" fill="url(#airlynk-mark)" />
+    <rect width="32" height="32" rx="9" fill="url(#aerlynk-mark)" />
     <rect x="0.5" y="0.5" width="31" height="31" rx="8.5" stroke="#fff" strokeOpacity="0.18" />
     <path
       d="M9 21.5 16 9l7 12.5M11.6 17h8.8"

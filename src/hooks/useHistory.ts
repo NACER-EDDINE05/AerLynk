@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { HistoryEntry } from '../types';
 
-const STORAGE_KEY = 'airlynk.history';
+const STORAGE_KEY = 'aerlynk.history';
 const MAX_ENTRIES = 50;
 
 function load(): HistoryEntry[] {

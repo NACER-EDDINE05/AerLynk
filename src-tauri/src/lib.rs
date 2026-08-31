@@ -47,7 +47,7 @@ pub fn run() {
             let data_dir = app
                 .path()
                 .app_data_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("airlynk"));
+                .unwrap_or_else(|_| std::env::temp_dir().join("aerlynk"));
             // Fall back to temp if we cannot find Downloads (e.g. headless CI);
             // the real path is resolved to a per-user folder on normal installs.
             let downloads_dir = known_downloads_dir().unwrap_or_else(|| data_dir.join("Downloads"));
@@ -109,5 +109,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running airlynk");
+        .expect("error while running aerlynk");
 }

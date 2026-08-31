@@ -1,12 +1,12 @@
 [package]
-name = "airlynk"
+name = "aerlynk"
 version = "0.1.1"
-description = "AirLynk — LAN file transfer wrapped in a tamper-evident sleeve"
-authors = ["AirLynk"]
+description = "AerLynk — LAN file transfer wrapped in a tamper-evident sleeve"
+authors = ["AerLynk"]
 edition = "2021"
 
 [lib]
-name = "airlynk_lib"
+name = "aerlynk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -32,7 +32,7 @@ qrcode = { version = "0.14", features = ["svg"] }
 percent-encoding = "2"
 mime_guess = "2"
 bytes = "1"
-airlynk-crypto = { path = "../crates/airlynk-crypto" }
+aerlynk-crypto = { path = "../crates/aerlynk-crypto" }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

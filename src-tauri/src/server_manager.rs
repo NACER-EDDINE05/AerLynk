@@ -151,8 +151,8 @@ mod tests {
 
     fn tmp_dirs(tag: &str) -> (PathBuf, PathBuf) {
         let pid = std::process::id();
-        let d = std::env::temp_dir().join(format!("airlynk-mgr-{tag}-{pid}"));
-        let q = std::env::temp_dir().join(format!("airlynk-mgr-q-{tag}-{pid}"));
+        let d = std::env::temp_dir().join(format!("aerlynk-mgr-{tag}-{pid}"));
+        let q = std::env::temp_dir().join(format!("aerlynk-mgr-q-{tag}-{pid}"));
         std::fs::create_dir_all(&d).unwrap();
         std::fs::create_dir_all(&q).unwrap();
         (d, q)

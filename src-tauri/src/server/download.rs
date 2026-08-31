@@ -9,7 +9,7 @@ use bytes::Bytes;
 use futures_util::Stream;
 use tokio::io::AsyncReadExt;
 
-use airlynk_crypto::{encrypt_chunk_into, MAX_CHUNK_PLAINTEXT};
+use aerlynk_crypto::{encrypt_chunk_into, MAX_CHUNK_PLAINTEXT};
 
 use super::{resolve_session, AppState};
 use crate::session::{FileStatus, Session, SessionKind};
@@ -37,8 +37,8 @@ pub async fn download_file(
     // the tail (if any) is 4 + rem + TAG.
     let full = size / MAX_CHUNK_PLAINTEXT as u64;
     let rem = size % MAX_CHUNK_PLAINTEXT as u64;
-    let total = full * (4 + MAX_CHUNK_PLAINTEXT as u64 + airlynk_crypto::TAG_LEN as u64)
-        + if rem > 0 { 4 + rem + airlynk_crypto::TAG_LEN as u64 } else { 0 };
+    let total = full * (4 + MAX_CHUNK_PLAINTEXT as u64 + aerlynk_crypto::TAG_LEN as u64)
+        + if rem > 0 { 4 + rem + aerlynk_crypto::TAG_LEN as u64 } else { 0 };
 
     let filename = sanitize_header_name(&file.original_name);
     let key = session.key;
@@ -100,7 +100,7 @@ fn encrypted_stream(
             if idx == 0 {
                 session.set_file_status(file_id, FileStatus::Active);
             }
-            let mut framed = Vec::with_capacity(filled + 4 + airlynk_crypto::TAG_LEN);
+            let mut framed = Vec::with_capacity(filled + 4 + aerlynk_crypto::TAG_LEN);
             if encrypt_chunk_into(&key, &base, idx, &buffer[..filled], &mut framed).is_err() {
                 return Some((
                     Err(std::io::Error::other("encrypt failed")),

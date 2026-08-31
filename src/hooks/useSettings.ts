@@ -3,7 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { setPreferredPort } from '../lib/ipc';
 import type { Settings, ThemePreference } from '../types';
 
-const STORAGE_KEY = 'airlynk.settings';
+const STORAGE_KEY = 'aerlynk.settings';
 
 const DEFAULTS: Settings = {
   theme: 'system',

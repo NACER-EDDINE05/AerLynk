@@ -15,7 +15,7 @@ fn main() {
         .args([
             "build",
             "-p",
-            "airlynk-crypto",
+            "aerlynk-crypto",
             "--target",
             "wasm32-unknown-unknown",
             "--release",
@@ -26,14 +26,14 @@ fn main() {
         .expect("failed to run nested cargo for wasm32; is cargo on PATH?");
     assert!(
         status.success(),
-        "wasm32 build of airlynk-crypto failed (rustup target add wasm32-unknown-unknown)"
+        "wasm32 build of aerlynk-crypto failed (rustup target add wasm32-unknown-unknown)"
     );
     std::fs::copy(
-        wasm_target_dir.join("wasm32-unknown-unknown/release/airlynk_crypto.wasm"),
+        wasm_target_dir.join("wasm32-unknown-unknown/release/aerlynk_crypto.wasm"),
         &wasm_out,
     )
     .expect("copy aesgcm.wasm into OUT_DIR");
-    println!("cargo:rerun-if-changed=../crates/airlynk-crypto/src/lib.rs");
-    println!("cargo:rerun-if-changed=../crates/airlynk-crypto/Cargo.toml");
+    println!("cargo:rerun-if-changed=../crates/aerlynk-crypto/src/lib.rs");
+    println!("cargo:rerun-if-changed=../crates/aerlynk-crypto/Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 }

@@ -180,48 +180,48 @@ async function loadCipher(){
   const bytes = await response.arrayBuffer();
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const e = instance.exports;
-  if(!e.memory || !e.airlynk_alloc || !e.airlynk_free || !e.airlynk_encrypt || !e.airlynk_decrypt) throw new Error('Invalid cipher module.');
-  // All staging memory comes from the module's OWN allocator (airlynk_alloc /
-  // airlynk_free). Never write at fixed low addresses: they clobber the
+  if(!e.memory || !e.aerlynk_alloc || !e.aerlynk_free || !e.aerlynk_encrypt || !e.aerlynk_decrypt) throw new Error('Invalid cipher module.');
+  // All staging memory comes from the module's OWN allocator (aerlynk_alloc /
+  // aerlynk_free). Never write at fixed low addresses: they clobber the
   // module's statics, shadow stack, and allocator metadata, and the module
   // itself allocates while hashing, so its allocator may grow linear memory
   // at any time. Growing a WebAssembly.Memory DETACHES the ArrayBuffer behind
   // any previously created view — so a view is created fresh at every use and
   // never cached across a call.
-  const alloc = len => { const p = e.airlynk_alloc(len); if (!p) throw new Error('Out of cipher memory.'); return p; };
+  const alloc = len => { const p = e.aerlynk_alloc(len); if (!p) throw new Error('Out of cipher memory.'); return p; };
   return {
     encryptChunk(key, nonce, idx, plain){
-      const outLen = e.airlynk_encrypt_len(plain.length);
+      const outLen = e.aerlynk_encrypt_len(plain.length);
       const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
       const plainPtr = alloc(plain.length), outPtr = alloc(outLen);
       try {
         const m = () => new Uint8Array(e.memory.buffer);
         m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(plain, plainPtr);
-        const rc = e.airlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
+        const rc = e.aerlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
         if (rc !== 0) throw new Error('Encryption failed.');
         return m().slice(outPtr, outPtr + outLen);
       } finally {
-        e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
-        e.airlynk_free(plainPtr, plain.length); e.airlynk_free(outPtr, outLen);
+        e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
+        e.aerlynk_free(plainPtr, plain.length); e.aerlynk_free(outPtr, outLen);
       }
     },
     decryptChunk(key, nonce, idx, framed){
-      const outLen = e.airlynk_decrypt_len(framed.length);
+      const outLen = e.aerlynk_decrypt_len(framed.length);
       if (!outLen) throw new Error('Malformed encrypted frame.');
       // The 4-byte plaintext-length prefix is framing, not ciphertext. The
-      // WASM ABI (see airlynk_decrypt) expects the bare ciphertext, so skip it.
+      // WASM ABI (see aerlynk_decrypt) expects the bare ciphertext, so skip it.
       const ctLen = framed.length - 4;
       const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
       const framePtr = alloc(framed.length), outPtr = alloc(outLen);
       try {
         const m = () => new Uint8Array(e.memory.buffer);
         m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(framed, framePtr);
-        const rc = e.airlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, ctLen, outPtr);
+        const rc = e.aerlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, ctLen, outPtr);
         if (rc !== 0) throw new Error('Decryption failed. Check the QR session key.');
         return m().slice(outPtr, outPtr + outLen);
       } finally {
-        e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
-        e.airlynk_free(framePtr, framed.length); e.airlynk_free(outPtr, outLen);
+        e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
+        e.aerlynk_free(framePtr, framed.length); e.aerlynk_free(outPtr, outLen);
       }
     }
   };
@@ -235,9 +235,9 @@ const PHONE_SHIELD_SVG: &str = "<svg width=\"12\" height=\"12\" viewBox=\"0 0 24
 
 fn render_send_page(token: &str, display_code: &str, files_b64: &str, nonce: &str) -> String {
     format!(
-        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AirLynk</title><style>{styles}</style></head>
-<body><header><span class="brand"><span class="mark">{mark}</span>AirLynk</span><span class="secure">{lock} Encrypted</span></header>
-<main><h1>Download from AirLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}</style></head>
+<body><header><span class="brand"><span class="mark">{mark}</span>AerLynk</span><span class="secure">{lock} Encrypted</span></header>
+<main><h1>Download from AerLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
 <div class="card"><div id="list"></div><div id="status" class="status muted">Pick a file to download and decrypt on this phone.</div></div>
 <div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
 <script>
@@ -307,9 +307,9 @@ async function downloadFile(file, btn) {{
 
 fn render_receive_page(token: &str, display_code: &str, nonce: &str) -> String {
     format!(
-        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AirLynk</title><style>{styles}</style></head>
-<body><header><span class="brand"><span class="mark">{mark}</span>AirLynk</span><span class="secure">{lock} Encrypted</span></header>
-<main><h1>Upload to AirLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}</style></head>
+<body><header><span class="brand"><span class="mark">{mark}</span>AerLynk</span><span class="secure">{lock} Encrypted</span></header>
+<main><h1>Upload to AerLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
 <div class="card"><input id="picker" type="file" multiple><div style="height:10px"></div><button id="send">Upload selected files</button>
 <div style="height:10px"></div><progress id="progress" max="100" value="0"></progress><div id="status" class="status muted">Select files, then upload.</div></div>
 <div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
@@ -392,8 +392,8 @@ mod tests {
     fn state() -> (AppState, Arc<SessionRegistry>) {
         let seq = STATE_SEQ.fetch_add(1, Ordering::Relaxed);
         let registry = Arc::new(SessionRegistry::new(DEFAULT_INACTIVITY_TIMEOUT));
-        let downloads = std::env::temp_dir().join(format!("airlynk-dl-{}-{seq}", std::process::id()));
-        let quarantine = std::env::temp_dir().join(format!("airlynk-q-{}-{seq}", std::process::id()));
+        let downloads = std::env::temp_dir().join(format!("aerlynk-dl-{}-{seq}", std::process::id()));
+        let quarantine = std::env::temp_dir().join(format!("aerlynk-q-{}-{seq}", std::process::id()));
         std::fs::create_dir_all(&downloads).unwrap();
         std::fs::create_dir_all(&quarantine).unwrap();
         (
@@ -502,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn download_round_trips_encrypted_and_decrypts() {
         let (st, reg) = state();
-        let dir = std::env::temp_dir().join(format!("airlynk-src-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("aerlynk-src-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("holiday-photo.jpg");
         let pt = payload(3 * 1024 * 1024 + 777, 42);
@@ -532,14 +532,14 @@ mod tests {
             .unwrap()
             .parse::<u64>()
             .unwrap();
-        let full = size / airlynk_crypto::MAX_CHUNK_PLAINTEXT as u64;
-        let rem = size % airlynk_crypto::MAX_CHUNK_PLAINTEXT as u64;
-        let expected = full * (4 + airlynk_crypto::MAX_CHUNK_PLAINTEXT as u64 + airlynk_crypto::TAG_LEN as u64)
-            + if rem > 0 { 4 + rem + airlynk_crypto::TAG_LEN as u64 } else { 0 };
+        let full = size / aerlynk_crypto::MAX_CHUNK_PLAINTEXT as u64;
+        let rem = size % aerlynk_crypto::MAX_CHUNK_PLAINTEXT as u64;
+        let expected = full * (4 + aerlynk_crypto::MAX_CHUNK_PLAINTEXT as u64 + aerlynk_crypto::TAG_LEN as u64)
+            + if rem > 0 { 4 + rem + aerlynk_crypto::TAG_LEN as u64 } else { 0 };
         assert_eq!(cl, expected);
 
         let body = collect(resp).await;
-        let decrypted = airlynk_crypto::decrypt_all(&s.key, &s.base_nonce, &body).unwrap();
+        let decrypted = aerlynk_crypto::decrypt_all(&s.key, &s.base_nonce, &body).unwrap();
         assert_eq!(decrypted, pt);
         // Wire bytes must NOT contain plaintext (SEC-13).
         assert!(!body.windows(pt.len().min(64)).any(|w| w == &pt[..pt.len().min(64)]));
@@ -548,7 +548,7 @@ mod tests {
     #[tokio::test]
     async fn download_unknown_file_id_is_404() {
         let (st, reg) = state();
-        let dir = std::env::temp_dir().join(format!("airlynk-src-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("aerlynk-src-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("a.bin");
         std::fs::write(&src, b"data").unwrap();
@@ -601,7 +601,7 @@ mod tests {
         let (st, reg) = state();
         let s = reg.create_receive_session();
         let pt = payload(2 * 1024 * 1024 + 999, 7);
-        let framed = airlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
+        let framed = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
         let body = multipart_body("xyz", &[("file", "holiday.jpg", &framed)]);
         let app = app(st.clone());
         use tower::ServiceExt;
@@ -624,7 +624,7 @@ mod tests {
         let (st, reg) = state();
         let s = reg.create_receive_session();
         let pt = payload(1000, 1);
-        let framed = airlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
+        let framed = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
         std::fs::write(st.downloads_dir.join("clip.mp4"), b"first").unwrap();
         let body = multipart_body("b1", &[("file", "clip.mp4", &framed)]);
         let app = app(st.clone());
@@ -640,7 +640,7 @@ mod tests {
         let (st, reg) = state();
         let s = reg.create_receive_session();
         let pt = payload(500, 9);
-        let framed = airlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
+        let framed = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
         let body = multipart_body("b2", &[("file", "../../evil.txt", &framed)]);
         let app = app(st.clone());
         use tower::ServiceExt;
@@ -656,7 +656,7 @@ mod tests {
         let (st, reg) = state();
         let s = reg.create_receive_session();
         let pt = payload(2000, 3);
-        let mut framed = airlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
+        let mut framed = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &pt);
         let mid = framed.len() / 2;
         framed[mid] ^= 0x80;
         let body = multipart_body("b3", &[("file", "evil.bin", &framed)]);
@@ -726,13 +726,13 @@ mod tests {
 
     /// Exit criterion: a multi-GB file moves end-to-end over a real socket
     /// with flat memory. Slower in debug; run explicitly with
-    /// `cargo test -p airlynk -- --ignored`.
+    /// `cargo test -p aerlynk -- --ignored`.
     #[tokio::test]
     #[ignore = "multi-GB transfer; run explicitly as an exit-criteria check"]
     async fn multi_gb_download_streams_with_flat_memory() {
         let (st, reg) = state();
         let size = 2u64 * 1024 * 1024 * 1024; // 2 GiB
-        let dir = std::env::temp_dir().join(format!("airlynk-big-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("aerlynk-big-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("big.bin");
         let f = tokio::fs::File::create(&src).await.unwrap();
@@ -785,7 +785,7 @@ mod tests {
 
         // Stream the body, frame-by-frame, decrypting and discarding.
         // Memory must stay flat: no buffer scales with the file size.
-        let mut pending = Vec::with_capacity(4 + airlynk_crypto::MAX_CHUNK_PLAINTEXT + 16);
+        let mut pending = Vec::with_capacity(4 + aerlynk_crypto::MAX_CHUNK_PLAINTEXT + 16);
         let mut total = 0u64;
         let mut decrypted = 0u64;
         let mut idx = 0u64;
@@ -803,15 +803,15 @@ mod tests {
                 }
                 let pt_len =
                     u32::from_be_bytes(pending[..4].try_into().unwrap()) as usize;
-                if pt_len > airlynk_crypto::MAX_CHUNK_PLAINTEXT {
+                if pt_len > aerlynk_crypto::MAX_CHUNK_PLAINTEXT {
                     panic!("oversized frame in stream");
                 }
-                if pending.len() < 4 + pt_len + airlynk_crypto::TAG_LEN {
+                if pending.len() < 4 + pt_len + aerlynk_crypto::TAG_LEN {
                     break;
                 }
-                let ct = pending[4..4 + pt_len + airlynk_crypto::TAG_LEN].to_vec();
-                pending.drain(..4 + pt_len + airlynk_crypto::TAG_LEN);
-                let pt = airlynk_crypto::decrypt_chunk(&s.key, &s.base_nonce, idx, &ct)
+                let ct = pending[4..4 + pt_len + aerlynk_crypto::TAG_LEN].to_vec();
+                pending.drain(..4 + pt_len + aerlynk_crypto::TAG_LEN);
+                let pt = aerlynk_crypto::decrypt_chunk(&s.key, &s.base_nonce, idx, &ct)
                     .unwrap_or_else(|e| panic!("decrypt chunk {idx}: {e}"));
                 assert_eq!(pt.len(), pt_len);
                 assert!(pt.iter().all(|b| *b == 0), "chunk {idx} not zeros");

@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/airlynk-crypto"]
+members = ["src-tauri", "crates/aerlynk-crypto"]
 resolver = "2"
 
 [workspace.package]

@@ -2,7 +2,7 @@
 //
 // Simulates the exact staging pattern the phone pages use
 // (src-tauri/src/server/mod.rs, wasm_crypto_runtime): all staging memory comes
-// from the module's own allocator (airlynk_alloc / airlynk_free) and views are
+// from the module's own allocator (aerlynk_alloc / aerlynk_free) and views are
 // created fresh at every use, because the module's allocator may grow linear
 // memory during a call — growing a WebAssembly.Memory detaches any previously
 // created ArrayBuffer.
@@ -12,51 +12,51 @@
 // and the dlmalloc heap corruption the fixed offsets caused with 1 MiB chunks.
 //
 // Run:  node scripts/wasm-runtime-sim.mjs
-// (requires target-wasm/wasm32-unknown-unknown/release/airlynk_crypto.wasm)
+// (requires target-wasm/wasm32-unknown-unknown/release/aerlynk_crypto.wasm)
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const wasmPath = join(root, "target-wasm", "wasm32-unknown-unknown", "release", "airlynk_crypto.wasm");
+const wasmPath = join(root, "target-wasm", "wasm32-unknown-unknown", "release", "aerlynk_crypto.wasm");
 const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), {});
 const e = instance.exports;
 
-for (const name of ["memory", "airlynk_alloc", "airlynk_free", "airlynk_encrypt", "airlynk_decrypt", "airlynk_encrypt_len", "airlynk_decrypt_len"]) {
+for (const name of ["memory", "aerlynk_alloc", "aerlynk_free", "aerlynk_encrypt", "aerlynk_decrypt", "aerlynk_encrypt_len", "aerlynk_decrypt_len"]) {
   if (!e[name]) { console.error(`FAIL  missing export: ${name}`); process.exit(1); }
 }
 
 // Mirror of the phone runtime (wasm_crypto_runtime).
-const alloc = len => { const p = e.airlynk_alloc(len); if (!p) throw new Error("Out of cipher memory."); return p; };
+const alloc = len => { const p = e.aerlynk_alloc(len); if (!p) throw new Error("Out of cipher memory."); return p; };
 const view = () => new Uint8Array(e.memory.buffer);
 function encryptChunk(key, nonce, idx, plain) {
-  const outLen = e.airlynk_encrypt_len(plain.length);
+  const outLen = e.aerlynk_encrypt_len(plain.length);
   const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
   const plainPtr = alloc(plain.length), outPtr = alloc(outLen);
   try {
     view().set(key, keyPtr); view().set(nonce, noncePtr); view().set(plain, plainPtr);
-    const rc = e.airlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
+    const rc = e.aerlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
     if (rc !== 0) throw new Error("Encryption failed.");
     return view().slice(outPtr, outPtr + outLen);
   } finally {
-    e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
-    e.airlynk_free(plainPtr, plain.length); e.airlynk_free(outPtr, outLen);
+    e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
+    e.aerlynk_free(plainPtr, plain.length); e.aerlynk_free(outPtr, outLen);
   }
 }
 function decryptChunk(key, nonce, idx, framed) {
-  const outLen = e.airlynk_decrypt_len(framed.length);
+  const outLen = e.aerlynk_decrypt_len(framed.length);
   if (!outLen) throw new Error("Malformed encrypted frame.");
   const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
   const framePtr = alloc(framed.length), outPtr = alloc(outLen);
   try {
     view().set(key, keyPtr); view().set(nonce, noncePtr); view().set(framed, framePtr);
-    const rc = e.airlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, framed.length - 4, outPtr);
+    const rc = e.aerlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, framed.length - 4, outPtr);
     if (rc !== 0) throw new Error("Decryption failed.");
     return view().slice(outPtr, outPtr + outLen);
   } finally {
-    e.airlynk_free(keyPtr, key.length); e.airlynk_free(noncePtr, nonce.length);
-    e.airlynk_free(framePtr, framed.length); e.airlynk_free(outPtr, outLen);
+    e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
+    e.aerlynk_free(framePtr, framed.length); e.aerlynk_free(outPtr, outLen);
   }
 }
 

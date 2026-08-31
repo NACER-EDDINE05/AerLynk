@@ -1,22 +1,22 @@
-// AirLynk native ↔ WASM cipher cross-check.
+// AerLynk native ↔ WASM cipher cross-check.
 //
-// Verifies that the WASM build of airlynk-crypto agrees byte-for-byte with the
+// Verifies that the WASM build of aerlynk-crypto agrees byte-for-byte with the
 // native implementation. The native side writes fixture-vectors.json via
-// `cargo test -p airlynk-crypto print_wasm_fixture`; this script instantiates
+// `cargo test -p aerlynk-crypto print_wasm_fixture`; this script instantiates
 // the wasm, reproduces the native encrypt with the WASM exports, and decrypts
 // the native ciphertext back. A mismatch here would fail only on a real phone,
 // at the worst possible moment — hence the check.
 //
 // Run:  node scripts/wasm-cross-check.mjs
-// (requires target-wasm/wasm32-unknown-unknown/release/airlynk_crypto.wasm)
+// (requires target-wasm/wasm32-unknown-unknown/release/aerlynk_crypto.wasm)
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const wasmPath = join(root, "target-wasm", "wasm32-unknown-unknown", "release", "airlynk_crypto.wasm");
-const fixturePath = join(root, "crates", "airlynk-crypto", "fixture-vectors.json");
+const wasmPath = join(root, "target-wasm", "wasm32-unknown-unknown", "release", "aerlynk_crypto.wasm");
+const fixturePath = join(root, "crates", "aerlynk-crypto", "fixture-vectors.json");
 
 const wasmBytes = readFileSync(wasmPath);
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
@@ -37,7 +37,7 @@ const check = (name, cond) => {
 };
 
 const { instance } = await WebAssembly.instantiate(wasmBytes, {});
-const { memory, airlynk_encrypt, airlynk_decrypt, airlynk_encrypt_len, airlynk_decrypt_len } = instance.exports;
+const { memory, aerlynk_encrypt, aerlynk_decrypt, aerlynk_encrypt_len, aerlynk_decrypt_len } = instance.exports;
 
 const KEY_LEN = 32;
 const NONCE_LEN = 12;
@@ -65,9 +65,9 @@ const mem = () => new Uint8Array(memory.buffer);
 
 // 1. WASM encrypt must reproduce the native ciphertext exactly.
 {
-  const outLen = airlynk_encrypt_len(pt.length);
+  const outLen = aerlynk_encrypt_len(pt.length);
   check(`encrypt_len(${pt.length}) = ${pt.length + 4 + 16}`, outLen === pt.length + 4 + 16);
-  const rc = airlynk_encrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ptOff, pt.length, outOff);
+  const rc = aerlynk_encrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ptOff, pt.length, outOff);
   check("wasm encrypt rc = 0", rc === 0);
   // fresh view: the wasm allocator may have grown memory during the call
   const m = mem();
@@ -81,9 +81,9 @@ const mem = () => new Uint8Array(memory.buffer);
 // 2. WASM decrypt of the NATIVE ciphertext must recover the plaintext.
 {
   mem().set(nativeCt, ctOff);
-  const outLen = airlynk_decrypt_len(nativeCt.length + 4);
+  const outLen = aerlynk_decrypt_len(nativeCt.length + 4);
   check(`decrypt_len(${nativeCt.length + 4}) = ${nativeCt.length - 16}`, outLen === nativeCt.length - 16);
-  const rc = airlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ctOff, nativeCt.length, outOff);
+  const rc = aerlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ctOff, nativeCt.length, outOff);
   check("wasm decrypt of native ct rc = 0", rc === 0);
   const m = mem();
   const plain = m.slice(outOff, outOff + outLen);
@@ -95,20 +95,20 @@ const mem = () => new Uint8Array(memory.buffer);
   const tampered = nativeCt.slice();
   tampered[0] ^= 0x01;
   mem().set(tampered, ctOff);
-  const rc = airlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ctOff, tampered.length, outOff);
+  const rc = aerlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx, 0, ctOff, tampered.length, outOff);
   check("tampered ct rejected (rc = 1)", rc === 1);
 }
 
 // 4. Wrong chunk index must fail authentication (nonce derivation matters).
 {
   mem().set(nativeCt, ctOff);
-  const rc = airlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx + 1, 0, ctOff, nativeCt.length, outOff);
+  const rc = aerlynk_decrypt(keyOff, KEY_LEN, baseOff, NONCE_LEN, idx + 1, 0, ctOff, nativeCt.length, outOff);
   check("wrong chunk index rejected (rc = 1)", rc === 1);
 }
 
 // 5. Bad arguments are rejected without panicking across the boundary.
 {
-  const rc = airlynk_decrypt(keyOff, 31, baseOff, NONCE_LEN, idx, 0, ctOff, nativeCt.length, outOff);
+  const rc = aerlynk_decrypt(keyOff, 31, baseOff, NONCE_LEN, idx, 0, ctOff, nativeCt.length, outOff);
   check("wrong key length rejected (rc = 2)", rc === 2);
 }
 

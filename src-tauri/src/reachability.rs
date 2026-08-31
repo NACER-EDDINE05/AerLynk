@@ -119,7 +119,7 @@ pub fn verify(addr: SocketAddr, interface_name: &str) -> ReachReport {
             detail: format!(
                 "The server is running but connections to {} on {} are blocked. \
                  Windows Firewall may be preventing inbound traffic. \
-                 Open AirLynk and select Repair Firewall to fix this.",
+                 Open AerLynk and select Repair Firewall to fix this.",
                 addr, interface_name
             ),
         }

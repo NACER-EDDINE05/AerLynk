@@ -1,8 +1,8 @@
 [package]
-name = "airlynk-crypto"
+name = "aerlynk-crypto"
 version.workspace = true
 edition.workspace = true
-description = "AirLynk payload cipher — AES-GCM, one implementation compiled for native and wasm32"
+description = "AerLynk payload cipher — AES-GCM, one implementation compiled for native and wasm32"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

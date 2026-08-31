@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
-use airlynk_crypto::{decrypt_chunk, CryptoError, MAX_CHUNK_PLAINTEXT, TAG_LEN};
+use aerlynk_crypto::{decrypt_chunk, CryptoError, MAX_CHUNK_PLAINTEXT, TAG_LEN};
 
 use super::resolve_session;
 use crate::safety::{reserve_collision_safe_path, sanitize_filename, SafetyError};
@@ -327,7 +327,7 @@ mod tests {
         let base = [3u8; 12];
         let pt = b"hello framed world";
         let mut framed = Vec::new();
-        airlynk_crypto::encrypt_chunk_into(&key, &base, 0, pt, &mut framed).unwrap();
+        aerlynk_crypto::encrypt_chunk_into(&key, &base, 0, pt, &mut framed).unwrap();
 
         // Feed one byte at a time; frames must appear only at the end.
         let mut got = Vec::new();
@@ -352,7 +352,7 @@ mod tests {
         let base = [3u8; 12];
         let pt = b"hello";
         let mut framed = Vec::new();
-        airlynk_crypto::encrypt_chunk_into(&key, &base, 0, pt, &mut framed).unwrap();
+        aerlynk_crypto::encrypt_chunk_into(&key, &base, 0, pt, &mut framed).unwrap();
         let got = r.push(&framed[4..]).unwrap();
         assert_eq!(got.len(), 1);
         assert!(!r.has_pending());

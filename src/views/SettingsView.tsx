@@ -97,7 +97,7 @@ export function SettingsView({ settings, onChange, networkError, lanIp, interfac
             Appearance
           </div>
           <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
-            Choose how AirLynk looks.
+            Choose how AerLynk looks.
           </div>
         </div>
         <div className="px-4 pb-4">
@@ -117,7 +117,7 @@ export function SettingsView({ settings, onChange, networkError, lanIp, interfac
 
         <Row
           title="Keep window on top"
-          description="Pin AirLynk above other windows while transferring."
+          description="Pin AerLynk above other windows while transferring."
         >
           <label className="switch">
             <input
@@ -194,7 +194,7 @@ export function SettingsView({ settings, onChange, networkError, lanIp, interfac
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>
-              AirLynk
+              AerLynk
             </span>
             {appVersion && <span className="chip chip-neutral">v{appVersion}</span>}
           </div>

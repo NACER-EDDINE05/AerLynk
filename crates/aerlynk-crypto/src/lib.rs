@@ -1,4 +1,4 @@
-//! AirLynk payload cipher — AES-GCM chunked streaming format.
+//! AerLynk payload cipher — AES-GCM chunked streaming format.
 //!
 //! Wire format (both directions, identical):
 //!
@@ -174,7 +174,7 @@ pub fn decrypt_chunk(
 /// free of the SAME length. Returns 0 when `len` is 0 (nothing to stage).
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_alloc(len: usize) -> *mut u8 {
+pub extern "C" fn aerlynk_alloc(len: usize) -> *mut u8 {
     use std::alloc::{alloc, Layout};
     if len == 0 {
         return std::ptr::null_mut();
@@ -187,12 +187,12 @@ pub extern "C" fn airlynk_alloc(len: usize) -> *mut u8 {
     }
 }
 
-/// WASM export: free a block previously returned by `airlynk_alloc`, with the
+/// WASM export: free a block previously returned by `aerlynk_alloc`, with the
 /// SAME length it was allocated with (the wasm System allocator needs the
 /// original Layout size).
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_free(ptr: *mut u8, len: usize) {
+pub extern "C" fn aerlynk_free(ptr: *mut u8, len: usize) {
     use std::alloc::{dealloc, Layout};
     if ptr.is_null() || len == 0 {
         return;
@@ -206,7 +206,7 @@ pub extern "C" fn airlynk_free(ptr: *mut u8, len: usize) {
 /// plaintext is `pt_len` bytes.
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_encrypt_len(pt_len: usize) -> usize {
+pub extern "C" fn aerlynk_encrypt_len(pt_len: usize) -> usize {
     pt_len + 4 + TAG_LEN
 }
 
@@ -214,7 +214,7 @@ pub extern "C" fn airlynk_encrypt_len(pt_len: usize) -> usize {
 /// framed input is `framed_len` bytes. Returns 0 on malformed length.
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_decrypt_len(framed_len: usize) -> usize {
+pub extern "C" fn aerlynk_decrypt_len(framed_len: usize) -> usize {
     if framed_len < 4 + TAG_LEN {
         return 0;
     }
@@ -224,11 +224,11 @@ pub extern "C" fn airlynk_decrypt_len(framed_len: usize) -> usize {
 /// WASM export: encrypt one chunk entirely inside wasm linear memory.
 /// Reads key at [key_ptr, key_ptr+32), base nonce at [nonce_ptr, nonce_ptr+12),
 /// plaintext at [pt_ptr, pt_ptr+pt_len); writes the framed chunk to out_ptr
-/// (caller reserved airlynk_encrypt_len(pt_len) bytes).
+/// (caller reserved aerlynk_encrypt_len(pt_len) bytes).
 /// Returns 0 on success, 1 on length/crypto error, 2 on malformed arguments.
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_encrypt(
+pub extern "C" fn aerlynk_encrypt(
     key_ptr: *const u8,
     key_len: usize,
     nonce_ptr: *const u8,
@@ -263,11 +263,11 @@ pub extern "C" fn airlynk_encrypt(
 /// WASM export: decrypt one framed chunk's ciphertext (the bytes after the
 /// 4-byte length prefix) entirely inside wasm linear memory. Reads key, base
 /// nonce, ciphertext; writes plaintext to out_ptr (caller reserved
-/// airlynk_decrypt_len(framed_len) bytes).
+/// aerlynk_decrypt_len(framed_len) bytes).
 /// Returns 0 on success, 1 on authentication failure, 2 on malformed input.
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
-pub extern "C" fn airlynk_decrypt(
+pub extern "C" fn aerlynk_decrypt(
     key_ptr: *const u8,
     key_len: usize,
     nonce_ptr: *const u8,
@@ -375,7 +375,7 @@ mod tests {
     fn single_chunk_round_trips() {
         let k = key();
         let b = base();
-        let pt = b"hello airlynk";
+        let pt = b"hello aerlynk";
         let framed = encrypt_chunk(&k, &b, 0, pt).unwrap();
         assert_eq!(framed.len(), pt.len() + 4 + TAG_LEN);
         // length prefix carries the plaintext length; ciphertext follows it
@@ -551,7 +551,7 @@ mod tests {
     fn print_wasm_fixture() {
         let k = key();
         let b = base();
-        let pt = b"airlynk native/wasm cross-check";
+        let pt = b"aerlynk native/wasm cross-check";
         let framed = encrypt_chunk(&k, &b, 0, pt).unwrap();
         let ct = &framed[4..];
         let fixture = serde_json::json!({

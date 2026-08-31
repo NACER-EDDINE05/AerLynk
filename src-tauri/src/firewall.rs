@@ -15,11 +15,19 @@
 //! `commands.rs` supplies a graceful no-op status.
 #![cfg(target_os = "windows")]
 
+use std::os::windows::process::CommandExt;
 use std::process::Command;
+
+// Spawned console programs (powershell.exe) pop up a visible console window
+// when the parent is a GUI process (`windows_subsystem = "windows"`). Every
+// child MUST be spawned with CREATE_NO_WINDOW so the app never flashes
+// terminals — which also both looks and behaves like malware behaviour to
+// users and antivirus heuristics.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// The canonical DisplayName of the program-scoped inbound Allow rule
 /// created by `installer/firewall.ps1`.
-pub const ALLOW_RULE_NAME: &str = "AirLynk (inbound LAN)";
+pub const ALLOW_RULE_NAME: &str = "AerLynk (inbound LAN)";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FirewallError {
@@ -38,7 +46,7 @@ pub enum FirewallStatus {
     Clean,
     /// Allow rule missing. The installer did not run, or a reinstall is due.
     MissingAllowRule,
-    /// One or more stale Block rules target AirLynk. Block beats Allow, so
+    /// One or more stale Block rules target AerLynk. Block beats Allow, so
     /// nothing else matters until these are deleted (FR-29).
     StaleBlockRules { names: Vec<String> },
     /// Could not determine the state (e.g. PowerShell unavailable).
@@ -80,7 +88,7 @@ pub fn allow_rule_exists() -> bool {
 /// Sentinel returned by the detection script when no rule with the canonical
 /// DisplayName exists — distinguishes "no rule" from "rule with no Program
 /// filter" (the latter means the rule allows any program and matches).
-const NO_RULE_SENTINEL: &str = "__airlynk-no-rule__";
+const NO_RULE_SENTINEL: &str = "__aerlynk-no-rule__";
 
 /// True when a firewall rule's Program filter covers `exe`. Pure decision
 /// core, unit-tested: an empty filter means "any program"; anything else must
@@ -94,7 +102,7 @@ fn program_matches(rule_program: &str, exe: &str) -> bool {
     rule.is_empty() || rule == exe.trim().to_ascii_lowercase()
 }
 
-/// Find stale **Block** rules that target AirLynk.
+/// Find stale **Block** rules that target AerLynk.
 ///
 /// When a user dismisses the Windows Firewall prompt, Windows writes a Block
 /// rule for that program. Block takes precedence over any Allow added later
@@ -104,7 +112,7 @@ fn program_matches(rule_program: &str, exe: &str) -> bool {
 pub fn find_stale_blocks() -> Result<Vec<String>, FirewallError> {
     let script = r#"
 $rules = Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue |
-    Where-Object { $_.Program -and $_.Program -like '*airlynk*' }
+    Where-Object { $_.Program -and $_.Program -like '*aerlynk*' }
 $rules | ForEach-Object { $_.DisplayName }
 "#;
     let out = run_ps_script(script)?;
@@ -131,12 +139,46 @@ pub fn classify(allow_exists: bool, stale_blocks: Vec<String>) -> FirewallStatus
 
 /// One-shot detection for the UI. Returns `Unknown` when PowerShell is not
 /// available or errors, so the app can degrade gracefully rather than lie.
+///
+/// Runs a **single** PowerShell invocation that reports both the Allow-rule
+/// state and any stale Block rules. Each `powershell.exe` cold start costs
+/// one to three seconds, and this runs on every app launch — two sequential
+/// spawns doubled the startup latency for no benefit.
 pub fn status() -> FirewallStatus {
-    let allow = allow_rule_exists();
-    match find_stale_blocks() {
-        Ok(blocks) => classify(allow, blocks),
-        Err(_) => FirewallStatus::Unknown,
-    }
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().replace('\'', "''"))
+        .unwrap_or_default();
+    let script = format!(
+        r#"
+$exe = '{exe}'
+$allow = $false
+$rules = Get-NetFirewallRule -DisplayName "{ALLOW_RULE_NAME}" -ErrorAction SilentlyContinue
+foreach ($r in @($rules)) {{
+    $p = ($r | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue).Program
+    if ([string]::IsNullOrWhiteSpace($p)) {{ $allow = $true }}
+    elseif (@($p) | Where-Object {{ $_.Trim() -ieq $exe }}) {{ $allow = $true }}
+}}
+if ($allow) {{ 'ALLOW:yes' }} else {{ 'ALLOW:no' }}
+$blocks = Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue |
+    Where-Object {{ $_.Program -and $_.Program -like '*aerlynk*' }}
+$blocks | ForEach-Object {{ "BLOCK:$($_.DisplayName)" }}
+"#
+    );
+
+    let result = run_ps_script(&script);
+    let (allow, blocks) = match result {
+        Ok(out) => {
+            let allow = out.lines().any(|l| l.trim() == "ALLOW:yes");
+            let blocks: Vec<String> = out
+                .lines()
+                .filter_map(|l| l.strip_prefix("BLOCK:").map(|n| n.trim().to_string()))
+                .filter(|l| !l.is_empty())
+                .collect();
+            (allow, blocks)
+        }
+        Err(_) => return FirewallStatus::Unknown,
+    };
+    classify(allow, blocks)
 }
 
 // ---------------------------------------------------------------------------
@@ -163,8 +205,8 @@ pub fn repair(program_path: &str) -> Result<(), FirewallError> {
     let safe_program = program_path.replace('\'', "''");
 
     let pid = std::process::id();
-    let tmp = std::env::temp_dir().join(format!("airlynk-firewall-repair-{pid}.ps1"));
-    let marker = std::env::temp_dir().join(format!("airlynk-firewall-repair-{pid}.ok"));
+    let tmp = std::env::temp_dir().join(format!("aerlynk-firewall-repair-{pid}.ps1"));
+    let marker = std::env::temp_dir().join(format!("aerlynk-firewall-repair-{pid}.ok"));
     let marker_str = marker.display().to_string().replace('\'', "''");
 
     let _ = std::fs::remove_file(&marker);
@@ -179,7 +221,7 @@ pub fn repair(program_path: &str) -> Result<(), FirewallError> {
     script.push_str(&format!(
         "Remove-NetFirewallRule -DisplayName '{ALLOW_RULE_NAME}' -ErrorAction SilentlyContinue\n\
          New-NetFirewallRule -DisplayName '{ALLOW_RULE_NAME}' \
-             -Description 'Allows AirLynk to accept incoming file transfers from phones on the local network' \
+             -Description 'Allows AerLynk to accept incoming file transfers from phones on the local network' \
              -Direction Inbound -Program '{safe_program}' -Protocol TCP -Action Allow \
              -Profile Private,Public -Enabled True\n\
          Set-Content -LiteralPath '{marker_str}' -Value 'ok'\n"
@@ -188,12 +230,13 @@ pub fn repair(program_path: &str) -> Result<(), FirewallError> {
     std::fs::write(&tmp, &script).map_err(|e| FirewallError::RepairFailed(e.to_string()))?;
 
     let cmd = format!(
-        "Start-Process -FilePath 'powershell' -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','{}')",
+        "Start-Process -FilePath 'powershell' -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','{}')",
         tmp.display().to_string().replace('\'', "''")
     );
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-Command", &cmd])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| FirewallError::PsCommand(e.to_string()))?;
 
@@ -227,6 +270,7 @@ fn run_ps_script(script: &str) -> Result<String, FirewallError> {
             "-Command",
             script,
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| FirewallError::PsCommand(e.to_string()))?;
 
@@ -257,7 +301,7 @@ mod tests {
 
     #[test]
     fn rule_name_is_stable() {
-        assert_eq!(ALLOW_RULE_NAME, "AirLynk (inbound LAN)");
+        assert_eq!(ALLOW_RULE_NAME, "AerLynk (inbound LAN)");
     }
 
     #[test]
@@ -274,11 +318,11 @@ mod tests {
     fn classify_stale_blocks_win_even_with_allow_present() {
         // Block beats Allow (FR-29): the presence of an Allow rule must not
         // hide a stale Block rule.
-        let status = classify(true, vec!["AirLynk".into()]);
+        let status = classify(true, vec!["AerLynk".into()]);
         assert_eq!(
             status,
             FirewallStatus::StaleBlockRules {
-                names: vec!["AirLynk".into()]
+                names: vec!["AerLynk".into()]
             }
         );
     }
@@ -294,8 +338,8 @@ mod tests {
 
     #[test]
     fn program_matches_any_program_rule() {
-        assert!(program_matches("", "C:\\apps\\airlynk.exe"));
-        assert!(program_matches("   ", "C:\\apps\\airlynk.exe"));
+        assert!(program_matches("", "C:\\apps\\aerlynk.exe"));
+        assert!(program_matches("   ", "C:\\apps\\aerlynk.exe"));
     }
 
     #[test]
@@ -308,15 +352,15 @@ mod tests {
         // The project moved from C:\ to P:\ — the old rule's Program filter
         // no longer covers the running binary and detection must say so.
         assert!(!program_matches(
-            "C:\\Users\\hp\\AirLynk\\target\\debug\\airlynk.exe",
-            "P:\\AirLynk\\target\\debug\\airlynk.exe",
+            "C:\\Users\\hp\\AerLynk\\target\\debug\\aerlynk.exe",
+            "P:\\AerLynk\\target\\debug\\aerlynk.exe",
         ));
     }
 
     #[test]
     fn program_matches_rejects_unverifiable_exe() {
         assert!(!program_matches("", ""));
-        assert!(!program_matches("C:\\apps\\airlynk.exe", "  "));
+        assert!(!program_matches("C:\\apps\\aerlynk.exe", "  "));
     }
 
     // Integration tests that touch PowerShell are environment-dependent.

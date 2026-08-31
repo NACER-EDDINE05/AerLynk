@@ -29,7 +29,7 @@ export function Sidebar({ active, onSelect, network, repairing, onRepair, onRefr
       <div className="flex items-center gap-2.5 px-2 pb-5">
         <LogoIcon size={26} />
         <span className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>
-          AirLynk
+          AerLynk
         </span>
       </div>
 
@@ -55,7 +55,7 @@ export function Sidebar({ active, onSelect, network, repairing, onRepair, onRefr
           >
             <div className="flex items-center gap-2 text-[12.5px] font-medium" style={{ color: 'var(--red)' }}>
               <AlertIcon size={14} />
-              Firewall is blocking AirLynk
+              Firewall is blocking AerLynk
             </div>
             <p className="m-0 text-[11.5px]" style={{ color: 'var(--text-secondary)' }}>
               Phones on your network can&apos;t reach this PC until the firewall rule is added.
