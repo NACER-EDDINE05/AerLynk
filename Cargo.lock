@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "aerlynk"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aerlynk-crypto",
  "axum",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "aerlynk-crypto"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aes-gcm",
  "getrandom 0.2.17",

@@ -10,8 +10,8 @@ Every byte crossing the network is encrypted end-to-end with **AES-256-GCM**, an
 ![Stack](https://img.shields.io/badge/Stack-Tauri%202%20%7C%20React%2019%20%7C%20Rust-24c8db?style=flat-square)
 ![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-4caf50?style=flat-square)
 ![Network](https://img.shields.io/badge/Network-LAN%20only-ff9800?style=flat-square)
-![Version](https://img.shields.io/badge/Version-0.1.1-9e9e9e?style=flat-square)
-![Downloads](https://img.shields.io/badge/-Download_0.1.1-3e63dd?style=flat-square&logo=windows&logoColor=white&label=)
+![Version](https://img.shields.io/badge/Version-0.1.2-9e9e9e?style=flat-square)
+![Downloads](https://img.shields.io/badge/-Download_0.1.2-3e63dd?style=flat-square&logo=windows&logoColor=white&label=)
 
 ---
 

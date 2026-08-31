@@ -3,5 +3,5 @@ members = ["src-tauri", "crates/aerlynk-crypto"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
