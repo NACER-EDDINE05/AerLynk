@@ -223,7 +223,7 @@ pub fn repair(program_path: &str) -> Result<(), FirewallError> {
          New-NetFirewallRule -DisplayName '{ALLOW_RULE_NAME}' \
              -Description 'Allows AerLynk to accept incoming file transfers from phones on the local network' \
              -Direction Inbound -Program '{safe_program}' -Protocol TCP -Action Allow \
-             -Profile Private,Public -Enabled True\n\
+             -Profile Domain,Private,Public -Enabled True\n\
          Set-Content -LiteralPath '{marker_str}' -Value 'ok'\n"
     ));
 

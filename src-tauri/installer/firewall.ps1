@@ -26,6 +26,6 @@ try {
 New-NetFirewallRule -DisplayName $allowRule `
     -Description 'Allows AerLynk to accept incoming file transfers from phones on the local network' `
     -Direction Inbound -Program $program -Protocol TCP -Action Allow `
-    -Profile Private,Public -Enabled True | Out-Null
+    -Profile Domain,Private,Public -Enabled True | Out-Null
 
 Write-Output "AerLynk firewall rule ready"

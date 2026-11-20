@@ -1,4 +1,4 @@
-import { AlertIcon, DownloadIcon, HistoryIcon, LogoIcon, RefreshIcon, SettingsIcon, ShieldIcon, UploadIcon, WifiIcon } from './Icons';
+import { AlertIcon, BrandMark, DownloadIcon, HistoryIcon, RefreshIcon, SettingsIcon, ShieldIcon, UploadIcon, WifiIcon } from './Icons';
 import type { NetworkStatus, View } from '../types';
 
 interface SidebarProps {
@@ -26,11 +26,9 @@ export function Sidebar({ active, onSelect, network, repairing, onRepair, onRefr
       className="sidebar flex h-full w-[232px] shrink-0 flex-col border-r px-3 py-4"
       style={{ borderColor: 'var(--border)' }}
     >
-      <div className="flex items-center gap-2.5 px-2 pb-5">
-        <LogoIcon size={26} />
-        <span className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>
-          AerLynk
-        </span>
+      <div className="flex flex-col items-center gap-2.5 px-2 pb-6 pt-1">
+        <BrandMark size={52} />
+        <span className="brand-word">AerLynk</span>
       </div>
 
       <nav className="flex flex-col gap-0.5">

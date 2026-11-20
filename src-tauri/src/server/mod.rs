@@ -20,7 +20,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use base64::Engine;
 use serde::Serialize;
 use axum::Router;
@@ -50,6 +50,13 @@ pub fn app(state: AppState) -> Router {
                 .post(upload::upload)
                 .layer(DefaultBodyLimit::disable()),
         )
+        // End-of-batch marker: a receive session cannot infer completion from
+        // its manifest (files are appended as they arrive), so the phone says
+        // when it is done uploading.
+        .route("/r/{token}/complete", post(upload::complete))
+        // The logotype for the phone pages, served from the binary so the page
+        // never reaches the internet for an asset (SEC-12).
+        .route("/brand/mark.png", get(brand_mark))
         .route("/aesgcm.wasm", get(assets::wasm))
         .with_state(state)
 }
@@ -119,6 +126,24 @@ struct PhoneFile {
     size: u64,
 }
 
+/// The AerLynk emblem shown in the phone header, embedded at compile time so
+/// the page stays fully self-contained (SEC-12).
+static BRAND_MARK_PNG: &[u8] = include_bytes!("../../../public/brand/mark-192.png");
+
+async fn brand_mark() -> Response {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "image/png"),
+            (
+                axum::http::header::CACHE_CONTROL,
+                "public, max-age=86400",
+            ),
+        ],
+        BRAND_MARK_PNG,
+    )
+        .into_response()
+}
+
 fn nonce_js_array(base: &[u8; 12]) -> String {
     base.iter()
         .map(u8::to_string)
@@ -164,6 +189,37 @@ progress::-webkit-progress-value{background:linear-gradient(90deg,#4d7dff,#2fd0f
 .trust{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:18px;color:#67728a;font-size:11.5px}"##
 }
 
+/// The halftone skin layered over the shell styles: warm paper, ink rules,
+/// hard offset shadows and dot screens. It only sets colour, borders and
+/// shadows, so the layout rules above stay authoritative.
+fn halftone_skin() -> &'static str {
+    r##"body{background-color:#f3efe4;background-image:radial-gradient(rgb(23 22 15 / 0.08) 1px,transparent 1.15px),radial-gradient(rgb(23 22 15 / 0.055) 1px,transparent 1.15px);background-size:7px 7px,13px 13px;background-position:0 0,3px 3px;color:#17160f}
+.brand{color:#17160f;font-weight:700}
+.brand .mark{width:26px;height:26px;border-radius:7px;border:1.5px solid rgb(23 22 15 / 0.45);background:#fff;box-shadow:2px 2px 0 rgb(23 22 15 / 0.16);object-fit:contain}
+.secure{color:#10693c;background:rgb(16 105 60 / 0.10);border:1.5px solid #10693c;border-radius:4px;letter-spacing:0.09em;text-transform:uppercase;font-size:10px}
+h1{color:#17160f;background:none;-webkit-text-fill-color:currentColor;font-weight:700}
+p{color:#4b4738}
+.code-chip{border:1.5px solid #17160f;border-radius:4px;background:#fbf8f0;color:#17160f;letter-spacing:0.14em;font-weight:600}
+.card{background-color:#fbf8f0;background-image:radial-gradient(rgb(23 22 15 / 0.05) 1px,transparent 1.15px);background-size:6px 6px;border:1.5px solid rgb(23 22 15 / 0.5);border-radius:10px;box-shadow:4px 4px 0 rgb(23 22 15 / 0.14);backdrop-filter:none;-webkit-backdrop-filter:none}
+.row{border-bottom:1px solid rgb(23 22 15 / 0.14)}
+.name .t{color:#17160f;font-weight:600}
+.name .m{color:#7c7660}
+.muted{color:#7c7660}
+button{background-color:#1450c8;background-image:radial-gradient(rgb(255 255 255 / 0.22) 1px,transparent 1.1px);background-size:3px 3px;color:#fdfbf5;border:1.5px solid #0b2a6b;border-radius:6px;box-shadow:3px 3px 0 rgb(20 80 200 / 0.3);font-weight:650}
+button:hover:not(:disabled){filter:none;background-color:#103fa0}
+button:active:not(:disabled){transform:none;box-shadow:none}
+input[type=file]{border:2px dashed rgb(23 22 15 / 0.4);border-radius:8px;background-color:#fbf8f0;background-image:radial-gradient(rgb(23 22 15 / 0.05) 1px,transparent 1.15px);background-size:8px 8px;color:#17160f}
+input[type=file]::file-selector-button{background:#f6f2e7;border:1.5px solid rgb(23 22 15 / 0.45);color:#17160f;border-radius:4px}
+progress{height:12px;border-radius:0;border:1.5px solid rgb(23 22 15 / 0.5);background:#f6f2e7}
+progress::-webkit-progress-bar{background:#f6f2e7;border-radius:0}
+progress::-webkit-progress-value{background-color:#1450c8;background-image:radial-gradient(rgb(255 255 255 / 0.45) 1px,transparent 1.15px);background-size:4px 4px;border-radius:0;box-shadow:none}
+.status{color:#4b4738}
+.status.muted{color:#7c7660}
+.status.ok{color:#10693c}
+.status.error{color:#b02a2a}
+.trust{color:#7c7660}"##
+}
+
 fn wasm_crypto_runtime() -> &'static str {
     r#"const B64URL = s => s.replace(/-/g,'+').replace(/_/g,'/');
 function decodeKeyFromHash(){
@@ -189,21 +245,33 @@ async function loadCipher(){
   // any previously created view — so a view is created fresh at every use and
   // never cached across a call.
   const alloc = len => { const p = e.aerlynk_alloc(len); if (!p) throw new Error('Out of cipher memory.'); return p; };
+  // ONE reusable scratch region per role, allocated on first use and grown only
+  // when a larger chunk arrives. A fresh alloc/free pair for every 1 MiB chunk
+  // means thousands of allocator round-trips per gigabyte on top of the AES
+  // work; reusing the region keeps phone memory flat and hands the CPU budget
+  // to the cipher. These blocks are never freed: the page holds them for its
+  // lifetime, which is exactly one session.
+  const keyPtr = alloc(64), noncePtr = alloc(32);
+  let inPtr = 0, inCap = 0, outPtr = 0, outCap = 0;
+  const grow = (ptr, cap, needed) => {
+    if (needed <= cap) return [ptr, cap];
+    const next = Math.max(needed, 256 * 1024);
+    if (ptr) e.aerlynk_free(ptr, cap);
+    return [alloc(next), next];
+  };
+  const view = () => new Uint8Array(e.memory.buffer);
   return {
     encryptChunk(key, nonce, idx, plain){
       const outLen = e.aerlynk_encrypt_len(plain.length);
-      const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
-      const plainPtr = alloc(plain.length), outPtr = alloc(outLen);
-      try {
-        const m = () => new Uint8Array(e.memory.buffer);
-        m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(plain, plainPtr);
-        const rc = e.aerlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), plainPtr, plain.length, outPtr);
-        if (rc !== 0) throw new Error('Encryption failed.');
-        return m().slice(outPtr, outPtr + outLen);
-      } finally {
-        e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
-        e.aerlynk_free(plainPtr, plain.length); e.aerlynk_free(outPtr, outLen);
-      }
+      let s = grow(inPtr, inCap, plain.length); inPtr = s[0]; inCap = s[1];
+      s = grow(outPtr, outCap, outLen); outPtr = s[0]; outCap = s[1];
+      const stage = view();
+      stage.set(key, keyPtr); stage.set(nonce, noncePtr); stage.set(plain, inPtr);
+      const rc = e.aerlynk_encrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), inPtr, plain.length, outPtr);
+      if (rc !== 0) throw new Error('Encryption failed.');
+      // The cipher may grow linear memory, which DETACHES any existing view:
+      // always copy the result out through a freshly created view.
+      return view().slice(outPtr, outPtr + outLen);
     },
     decryptChunk(key, nonce, idx, framed){
       const outLen = e.aerlynk_decrypt_len(framed.length);
@@ -211,32 +279,26 @@ async function loadCipher(){
       // The 4-byte plaintext-length prefix is framing, not ciphertext. The
       // WASM ABI (see aerlynk_decrypt) expects the bare ciphertext, so skip it.
       const ctLen = framed.length - 4;
-      const keyPtr = alloc(key.length), noncePtr = alloc(nonce.length);
-      const framePtr = alloc(framed.length), outPtr = alloc(outLen);
-      try {
-        const m = () => new Uint8Array(e.memory.buffer);
-        m().set(key, keyPtr); m().set(nonce, noncePtr); m().set(framed, framePtr);
-        const rc = e.aerlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), framePtr + 4, ctLen, outPtr);
-        if (rc !== 0) throw new Error('Decryption failed. Check the QR session key.');
-        return m().slice(outPtr, outPtr + outLen);
-      } finally {
-        e.aerlynk_free(keyPtr, key.length); e.aerlynk_free(noncePtr, nonce.length);
-        e.aerlynk_free(framePtr, framed.length); e.aerlynk_free(outPtr, outLen);
-      }
+      let s = grow(inPtr, inCap, framed.length); inPtr = s[0]; inCap = s[1];
+      s = grow(outPtr, outCap, outLen); outPtr = s[0]; outCap = s[1];
+      const stage = view();
+      stage.set(key, keyPtr); stage.set(nonce, noncePtr); stage.set(framed, inPtr);
+      const rc = e.aerlynk_decrypt(keyPtr, key.length, noncePtr, nonce.length, idx >>> 0, Math.floor(idx / 4294967296), inPtr + 4, ctLen, outPtr);
+      if (rc !== 0) throw new Error('Decryption failed. Check the QR session key.');
+      return view().slice(outPtr, outPtr + outLen);
     }
   };
 }"#
 }
 
 /// Inline SVG glyphs for the phone pages — no external assets (SEC-12).
-const PHONE_MARK_SVG: &str = "<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 16.5 12 5l7 11.5M7.6 12.4h8.8\"/></svg>";
 const PHONE_LOCK_SVG: &str = "<svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/></svg>";
 const PHONE_SHIELD_SVG: &str = "<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3 5 6v5c0 4.5 3 8.2 7 9.5 4-1.3 7-5 7-9.5V6l-7-3Z\"/></svg>";
 
 fn render_send_page(token: &str, display_code: &str, files_b64: &str, nonce: &str) -> String {
     format!(
-        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}</style></head>
-<body><header><span class="brand"><span class="mark">{mark}</span>AerLynk</span><span class="secure">{lock} Encrypted</span></header>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}{skin}</style></head>
+<body><header><span class="brand"><img class="mark" src="/brand/mark.png" alt="" width="26" height="26">AerLynk</span><span class="secure">{lock} Encrypted</span></header>
 <main><h1>Download from AerLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
 <div class="card"><div id="list"></div><div id="status" class="status muted">Pick a file to download and decrypt on this phone.</div></div>
 <div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
@@ -244,137 +306,212 @@ fn render_send_page(token: &str, display_code: &str, files_b64: &str, nonce: &st
 const TOKEN = "{token}";
 const NONCE = new Uint8Array([{nonce}]);
 const FILES = JSON.parse(atob("{files_b64}"));
-const fmt = n => n < 1024 ? `${{n}} B` : n < 1024*1024 ? `${{(n/1024).toFixed(1)}} KB` : n < 1024*1024*1024 ? `${{(n/1024/1024).toFixed(1)}} MB` : `${{(n/1024/1024/1024).toFixed(2)}} GB`;
 {runtime}
-const statusEl = document.getElementById('status');
-const listEl = document.getElementById('list');
-function setStatus(text, muted=false, tone=''){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':'')+(tone?' '+tone:''); }}
-for (const f of FILES) {{
-  const row = document.createElement('div'); row.className='row';
-  const left = document.createElement('div'); left.className='name';
-  left.innerHTML = `<span class="t">${{f.name}}</span><span class="m">${{fmt(f.size)}}</span>`;
-  const btn = document.createElement('button'); btn.textContent='Download'; btn.onclick=() => downloadFile(f, btn);
-  row.append(left, btn); listEl.append(row);
-}}
-async function downloadFile(file, btn) {{
-  btn.disabled = true;
-  try {{
-    setStatus(`Downloading ${{file.name}}...`, true);
-    const key = decodeKeyFromHash();
-    const cipher = await loadCipher();
-    const res = await fetch(`/s/${{TOKEN}}/f/${{file.id}}`);
-    if (!res.ok) throw new Error('Download failed.');
-    const total = Number(res.headers.get('content-length') || 0);
-    const reader = res.body.getReader();
-    const chunks = []; let received = 0;
-    while (true) {{
-      const r = await reader.read(); if (r.done) break;
-      chunks.push(r.value); received += r.value.length;
-      if (total > 0) setStatus(`Downloading ${{file.name}}... ${{Math.round(received*100/total)}}%`, true);
-    }}
-    const framed = new Uint8Array(received); let off = 0;
-    for (const c of chunks) {{ framed.set(c, off); off += c.length; }}
-    const plainParts = []; let pos = 0; let idx = 0;
-    while (pos < framed.length) {{
-      if (pos + 4 > framed.length) throw new Error('Malformed encrypted stream.');
-      const ptLen = (framed[pos]<<24) | (framed[pos+1]<<16) | (framed[pos+2]<<8) | framed[pos+3];
-      const frameLen = 4 + ptLen + 16;
-      if (pos + frameLen > framed.length) throw new Error('Malformed encrypted stream.');
-      const part = cipher.decryptChunk(key, NONCE, idx++, framed.slice(pos, pos + frameLen));
-      plainParts.push(part); pos += frameLen;
-    }}
-    const blob = new Blob(plainParts, {{ type:'application/octet-stream' }});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = file.name; a.click();
-    URL.revokeObjectURL(url);
-    setStatus(`Downloaded ${{file.name}} successfully.`, false, 'ok');
-  }} catch (e) {{
-    setStatus(e?.message || 'Download failed.', false, 'error');
-  }} finally {{ btn.disabled = false; }}
-}}
+{script}
 </script></body></html>"##,
         styles = shell_styles(),
+        skin = halftone_skin(),
         code = display_code,
         token = token,
         nonce = nonce,
         files_b64 = files_b64,
         runtime = wasm_crypto_runtime(),
-        mark = PHONE_MARK_SVG,
+        script = SEND_PAGE_SCRIPT,
         lock = PHONE_LOCK_SVG,
         shield = PHONE_SHIELD_SVG
     )
 }
 
+/// Client script for the send page. Frames are decrypted as they arrive, so a
+/// multi-GB download holds the plaintext once instead of buffering the whole
+/// ciphertext stream and then a second full copy of the file (the old path
+/// needed roughly three times the file size and killed phone tabs).
+const SEND_PAGE_SCRIPT: &str = r##"const CHUNK_LIMIT = 8 * 1024 * 1024;
+const fmt = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
+const statusEl = document.getElementById('status');
+const listEl = document.getElementById('list');
+function setStatus(text, muted = false, tone = '') { statusEl.textContent = text; statusEl.className = 'status' + (muted ? ' muted' : '') + (tone ? ' ' + tone : ''); }
+for (const f of FILES) {
+  const row = document.createElement('div'); row.className = 'row';
+  const left = document.createElement('div'); left.className = 'name';
+  const title = document.createElement('span'); title.className = 't'; title.textContent = f.name;
+  const meta = document.createElement('span'); meta.className = 'm'; meta.textContent = fmt(f.size);
+  left.append(title, meta);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Download';
+  btn.onclick = () => downloadFile(f, btn);
+  row.append(left, btn);
+  listEl.append(row);
+}
+async function downloadFile(file, btn) {
+  btn.disabled = true;
+  try {
+    setStatus(`Downloading ${file.name}...`, true);
+    const key = decodeKeyFromHash();
+    const cipher = await loadCipher();
+    const res = await fetch(`/s/${TOKEN}/f/${file.id}`);
+    if (!res.ok) throw new Error('Download failed.');
+    const total = Number(res.headers.get('content-length') || 0);
+    const reader = res.body.getReader();
+    const parts = [];
+    let pending = new Uint8Array(0), off = 0, idx = 0, received = 0;
+    for (;;) {
+      const read = await reader.read();
+      if (read.done) break;
+      received += read.value.length;
+      if (pending.length === off) {
+        pending = read.value; off = 0;
+      } else {
+        const keep = pending.length - off;
+        const merged = new Uint8Array(keep + read.value.length);
+        merged.set(pending.subarray(off), 0);
+        merged.set(read.value, keep);
+        pending = merged; off = 0;
+      }
+      while (pending.length - off >= 4) {
+        const ptLen = (pending[off] << 24) | (pending[off + 1] << 16) | (pending[off + 2] << 8) | pending[off + 3];
+        if (ptLen < 0 || ptLen > CHUNK_LIMIT) throw new Error('Malformed encrypted stream.');
+        const frameLen = 4 + ptLen + 16;
+        if (pending.length - off < frameLen) break;
+        parts.push(cipher.decryptChunk(key, NONCE, idx++, pending.subarray(off, off + frameLen)));
+        off += frameLen;
+      }
+      if (total > 0) setStatus(`Downloading ${file.name}... ${Math.min(99, Math.round(received * 100 / total))}%`, true);
+    }
+    if (pending.length - off > 0) throw new Error('Malformed encrypted stream.');
+    if (parts.length === 0 && received > 0) throw new Error('No file data received.');
+    const blob = new Blob(parts, { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = file.name; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    // Revoke later: Safari cancels a download whose blob URL is freed at once.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setStatus(`Downloaded ${file.name} successfully.`, false, 'ok');
+  } catch (e) {
+    setStatus(e && e.message ? e.message : 'Download failed.', false, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}"##;
+
 fn render_receive_page(token: &str, display_code: &str, nonce: &str) -> String {
     format!(
-        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}</style></head>
-<body><header><span class="brand"><span class="mark">{mark}</span>AerLynk</span><span class="secure">{lock} Encrypted</span></header>
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06080d"><title>AerLynk</title><style>{styles}{skin}</style></head>
+<body><header><span class="brand"><img class="mark" src="/brand/mark.png" alt="" width="26" height="26">AerLynk</span><span class="secure">{lock} Encrypted</span></header>
 <main><h1>Upload to AerLynk</h1><p>Session code</p><p class="code-chip mono">{code}</p>
 <div class="card"><input id="picker" type="file" multiple><div style="height:10px"></div><button id="send">Upload selected files</button>
-<div style="height:10px"></div><progress id="progress" max="100" value="0"></progress><div id="status" class="status muted">Select files, then upload.</div></div>
+<div style="height:10px"></div><progress id="progress" max="100" value="0"></progress><div id="status" class="status muted">Select one or more files, then upload.</div></div>
 <div class="trust">{shield} End-to-end encrypted — files never leave your Wi-Fi</div></main>
 <script>
 const TOKEN = "{token}";
 const NONCE = new Uint8Array([{nonce}]);
-const CHUNK = 1024 * 1024;
 {runtime}
-const picker = document.getElementById('picker');
-const send = document.getElementById('send');
-const progress = document.getElementById('progress');
-const statusEl = document.getElementById('status');
-function setStatus(text, muted=false, tone=''){{ statusEl.textContent=text; statusEl.className='status'+(muted?' muted':'')+(tone?' '+tone:''); }}
-async function encryptFile(file, key, cipher) {{
-  const raw = new Uint8Array(await file.arrayBuffer());
-  const parts = []; let idx = 0;
-  for (let i = 0; i < raw.length; i += CHUNK) {{
-    const plain = raw.slice(i, Math.min(i + CHUNK, raw.length));
-    parts.push(cipher.encryptChunk(key, NONCE, idx++, plain));
-  }}
-  return new Blob(parts, {{ type: 'application/octet-stream' }});
-}}
-send.onclick = async () => {{
-  if (!picker.files || picker.files.length === 0) {{ setStatus('Pick at least one file first.'); return; }}
-  send.disabled = true;
-  try {{
-    progress.value = 0;
-    const key = decodeKeyFromHash();
-    const cipher = await loadCipher();
-    const form = new FormData();
-    // Names + plaintext sizes let the PC verify every upload is complete
-    // before releasing it from quarantine (SEC-5, FR-12).
-    form.append('manifest', JSON.stringify(Array.from(picker.files).map(f => ({{ name: f.name, size: f.size }}))));
-    for (const file of picker.files) {{
-      setStatus(`Encrypting ${{file.name}}...`, true);
-      const encrypted = await encryptFile(file, key, cipher);
-      form.append('files', encrypted, file.name);
-    }}
-    setStatus('Uploading...', true);
-    await new Promise((resolve, reject) => {{
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/r/${{TOKEN}}`);
-      xhr.upload.onprogress = (e) => {{ if (e.lengthComputable) progress.value = Math.round((e.loaded / e.total) * 100); }};
-      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.responseText) : reject(new Error('Upload failed.'));
-      xhr.onerror = () => reject(new Error('Upload failed.'));
-      xhr.send(form);
-    }});
-    setStatus('Upload finished. You can close this page now.', false, 'ok');
-  }} catch (e) {{
-    setStatus(e?.message || 'Upload failed.', false, 'error');
-  }} finally {{
-    send.disabled = false;
-  }}
-}};
+{script}
 </script></body></html>"##,
         styles = shell_styles(),
+        skin = halftone_skin(),
         code = display_code,
         token = token,
         nonce = nonce,
         runtime = wasm_crypto_runtime(),
-        mark = PHONE_MARK_SVG,
+        script = RECEIVE_PAGE_SCRIPT,
         lock = PHONE_LOCK_SVG,
         shield = PHONE_SHIELD_SVG
     )
 }
+
+/// Client script for the receive page. Each file is read back in 1 MiB slices
+/// (never `file.arrayBuffer()`, which materialises a multi-GB file in a phone
+/// tab), encrypted frame by frame, and sent as its own request so one dropped
+/// connection or rejected file cannot discard the rest of the batch.
+const RECEIVE_PAGE_SCRIPT: &str = r##"const CHUNK = 1024 * 1024;
+const picker = document.getElementById('picker');
+const send = document.getElementById('send');
+const progress = document.getElementById('progress');
+const statusEl = document.getElementById('status');
+function setStatus(text, muted = false, tone = '') { statusEl.textContent = text; statusEl.className = 'status' + (muted ? ' muted' : '') + (tone ? ' ' + tone : ''); }
+function pct(done, total) { return total > 0 ? Math.max(0, Math.min(100, Math.round(done * 100 / total))) : 0; }
+async function encryptFile(file, key, cipher, onProgress) {
+  const parts = [];
+  let idx = 0;
+  for (let at = 0; at < file.size; at += CHUNK) {
+    const end = Math.min(at + CHUNK, file.size);
+    const plain = new Uint8Array(await file.slice(at, end).arrayBuffer());
+    parts.push(cipher.encryptChunk(key, NONCE, idx++, plain));
+    onProgress(end);
+  }
+  return new Blob(parts, { type: 'application/octet-stream' });
+}
+function postFile(blob, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    // Name + plaintext size let the PC verify the upload is complete before
+    // releasing it from quarantine (SEC-5, FR-12).
+    form.append('manifest', JSON.stringify([{ name: file.name, size: file.size }]));
+    form.append('files', blob, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/r/${TOKEN}`);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded, e.total); };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) { reject(new Error('Upload failed (' + xhr.status + ').')); return; }
+      try { resolve(JSON.parse(xhr.responseText || '[]')); } catch (e) { resolve([]); }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed — the connection dropped.'));
+    xhr.send(form);
+  });
+}
+picker.onchange = () => {
+  const n = (picker.files || []).length;
+  if (n === 1) setStatus('1 file selected — ready to upload.', true);
+  else if (n > 1) setStatus(n + ' files selected — ready to upload.', true);
+};
+send.onclick = async () => {
+  const files = Array.from(picker.files || []);
+  if (files.length === 0) { setStatus('Pick at least one file first.'); return; }
+  send.disabled = true;
+  const totalPlain = files.reduce((sum, f) => sum + f.size, 0);
+  let donePlain = 0, ok = 0;
+  const failed = [];
+  try {
+    progress.value = 0;
+    const key = decodeKeyFromHash();
+    const cipher = await loadCipher();
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const label = (i + 1) + '/' + files.length;
+      setStatus('Encrypting ' + file.name + ' (' + label + ')...', true);
+      const blob = await encryptFile(file, key, cipher, (done) => {
+        progress.value = pct(donePlain + done, totalPlain);
+      });
+      setStatus('Uploading ' + file.name + ' (' + label + ')...', true);
+      try {
+        const results = await postFile(blob, file, (loaded, total) => {
+          const share = total > 0 ? (loaded / total) * file.size : 0;
+          progress.value = pct(donePlain + share, totalPlain);
+        });
+        const bad = results.find(r => r && r.status !== 'done');
+        if (bad) failed.push(file.name + ': ' + (bad.error || 'rejected'));
+        else ok++;
+      } catch (e) {
+        failed.push(file.name + ': ' + (e && e.message ? e.message : 'upload failed'));
+      }
+      donePlain += file.size;
+      progress.value = pct(donePlain, totalPlain);
+    }
+    // Tell the PC the batch is over: without this it cannot tell a finished
+    // batch from the gap between two files.
+    try { await fetch('/r/' + TOKEN + '/complete', { method: 'POST' }); } catch (e) {}
+    if (failed.length === 0) {
+      setStatus(ok + (ok === 1 ? ' file uploaded. You can close this page now.' : ' files uploaded. You can close this page now.'), false, 'ok');
+    } else {
+      setStatus(ok + ' uploaded, ' + failed.length + ' failed:\n' + failed.join('\n'), false, 'error');
+    }
+  } catch (e) {
+    setStatus(e && e.message ? e.message : 'Upload failed.', false, 'error');
+  } finally {
+    send.disabled = false;
+  }
+};"##;
 
 /// Constant-time 404 body so unknown and expired tokens are indistinguishable
 /// even in the response body (FR-16): routes use `StatusCode::NOT_FOUND` with
@@ -633,6 +770,98 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(std::fs::read(st.downloads_dir.join("clip.mp4")).unwrap(), b"first");
         assert_eq!(std::fs::read(st.downloads_dir.join("clip (1).mp4")).unwrap(), pt);
+    }
+
+    /// Two different files that share a name, uploaded in one batch: each part
+    /// must be checked against its OWN manifest entry. A name-keyed manifest
+    /// handed both parts the last size and rejected one as incomplete.
+    #[tokio::test]
+    async fn upload_batch_pairs_files_with_manifest_by_position() {
+        let (st, reg) = state();
+        let s = reg.create_receive_session();
+        let first = payload(1200, 5);
+        let second = payload(3600, 6);
+        let framed_first = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &first);
+        let framed_second = aerlynk_crypto::encrypt_all(&s.key, &s.base_nonce, &second);
+
+        let boundary = "b9";
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(b"Content-Disposition: form-data; name=\"manifest\"\r\n\r\n");
+        let manifest = serde_json::json!([
+            { "name": "photo.jpg", "size": 1200 },
+            { "name": "photo.jpg", "size": 3600 }
+        ])
+        .to_string();
+        body.extend_from_slice(manifest.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        for framed in [&framed_first, &framed_second] {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            body.extend_from_slice(
+                b"Content-Disposition: form-data; name=\"files\"; filename=\"photo.jpg\"\r\n",
+            );
+            body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+            body.extend_from_slice(framed);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+        let app = app(st.clone());
+        use tower::ServiceExt;
+        let resp = app
+            .oneshot(upload_request(&s.token, body, boundary))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let json: serde_json::Value = serde_json::from_slice(&collect(resp).await).unwrap();
+        assert_eq!(json[0]["status"], "done", "{json}");
+        assert_eq!(json[1]["status"], "done", "{json}");
+        // Collision suffixing keeps both, so neither was dropped as incomplete.
+        assert_eq!(
+            std::fs::read(st.downloads_dir.join("photo.jpg")).unwrap(),
+            first
+        );
+        assert_eq!(
+            std::fs::read(st.downloads_dir.join("photo (1).jpg")).unwrap(),
+            second
+        );
+    }
+
+    /// The phone reports the end of its upload batch; that marker is what lets
+    /// the desktop finish the session instead of ending it between two files.
+    #[tokio::test]
+    async fn upload_complete_marker_is_recorded_for_the_session() {
+        let (st, reg) = state();
+        let s = reg.create_receive_session();
+        assert!(!s.is_upload_complete());
+        let app = app(st);
+        use tower::ServiceExt;
+        let resp = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(format!("/r/{}/complete", s.token))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert!(s.is_upload_complete());
+
+        // Unknown tokens stay indistinguishable here too.
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/r/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/complete")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -42,7 +42,7 @@ New-NetFirewallRule `
     -Program $ProgramPath `
     -Protocol TCP `
     -Action Allow `
-    -Profile Private,Public `
+    -Profile Domain,Private,Public `
     -Enabled True
 
 Write-Host "Firewall rule '$ruleName' provisioned for $ProgramPath"

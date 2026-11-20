@@ -28,6 +28,10 @@ export interface Settings {
   alwaysOnTop: boolean;
   /** Preferred phone-facing port; 0 = OS-assigned ephemeral. */
   port: number;
+  /** Preferred LAN IPv4 to bind; '' = auto-detect. */
+  bindIp: string;
+  /** Effective folder for received files (absolute, resolved by the backend). */
+  downloadsDir: string;
 }
 
 export type FirewallStatus = 'clean' | 'missingAllowRule' | 'staleBlockRules' | 'unknown';

@@ -49,7 +49,7 @@ function App() {
         </div>
         <div className={view === 'receive' ? 'block p-8' : 'hidden'}>
           <div className="mx-auto max-w-[620px]">
-            <ReceiveView addHistory={history.add} />
+            <ReceiveView addHistory={history.add} downloadsDir={settings.downloadsDir} />
           </div>
         </div>
         <div className={view === 'history' ? 'block p-8' : 'hidden'}>
@@ -65,6 +65,7 @@ function App() {
               networkError={network.status.error}
               lanIp={network.status.lanIp}
               interfaceName={network.status.interfaceName}
+              onNetworkRefresh={network.refresh}
             />
           </div>
         </div>

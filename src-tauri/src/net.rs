@@ -8,6 +8,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use if_addrs::{IfAddr, Interface};
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NetError {
@@ -21,6 +22,21 @@ pub enum NetError {
 pub struct LanAddress {
     pub name: String,
     pub ip: Ipv4Addr,
+}
+
+/// One adapter the user can bind the phone-facing server to
+/// (Settings → Network interface). Serialized straight to the webview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InterfaceInfo {
+    pub name: String,
+    /// Dotted IPv4, exactly what binds and what the QR will encode.
+    pub ip: String,
+    /// VPN / Hyper-V / WSL / Docker style adapters: selectable, but a phone on
+    /// the same Wi-Fi usually cannot reach them, so the UI flags them.
+    pub is_virtual: bool,
+    /// RFC1918 — the tier automatic selection prefers.
+    pub is_private: bool,
 }
 
 /// Lowercase substrings that mark an adapter as virtual — never a safe choice
@@ -152,6 +168,50 @@ pub fn discover_lan_ipv4() -> Result<LanAddress, NetError> {
     }
 
     pick_lan_ipv4(&ifaces).ok_or(NetError::NoLanAddress)
+}
+
+/// Every usable IPv4 address currently on this PC, real adapters first and by
+/// name within a tier so the menu order is stable between launches.
+///
+/// Loopback, link-local and unspecified addresses are excluded: a phone can
+/// never reach them, so offering them would only produce a broken QR.
+pub fn list_ipv4_interfaces() -> Result<Vec<InterfaceInfo>, NetError> {
+    let ifaces = if_addrs::get_if_addrs().map_err(|e| NetError::Enumeration(e.to_string()))?;
+    let mut out: Vec<InterfaceInfo> = ifaces
+        .iter()
+        .filter_map(|i| match i.addr {
+            IfAddr::V4(ref v4) if is_usable(v4.ip) => Some(InterfaceInfo {
+                name: i.name.clone(),
+                ip: v4.ip.to_string(),
+                is_virtual: is_virtual(&i.name),
+                is_private: is_private(v4.ip),
+            }),
+            _ => None,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        (a.is_virtual, !a.is_private, &a.name, &a.ip).cmp(&(
+            b.is_virtual,
+            !b.is_private,
+            &b.name,
+            &b.ip,
+        ))
+    });
+    out.dedup_by(|a, b| a.ip == b.ip);
+    Ok(out)
+}
+
+/// True when `ip` is currently assigned to one of this PC's interfaces. Used to
+/// validate a remembered interface choice before trusting it (a laptop that
+/// moved networks must not bind to a stale address).
+pub fn has_ipv4(ip: Ipv4Addr) -> bool {
+    if_addrs::get_if_addrs()
+        .map(|ifaces| {
+            ifaces
+                .iter()
+                .any(|i| matches!(&i.addr, IfAddr::V4(v4) if v4.ip == ip))
+        })
+        .unwrap_or(false)
 }
 
 /// Build the socket address the phone-facing server binds to: the discovered
@@ -287,6 +347,25 @@ mod tests {
         for name in ["Ethernet", "Wi-Fi", "Local Area Connection", "Ethernet 2"] {
             assert!(!is_virtual(name), "{name} should not be virtual");
         }
+    }
+
+    #[test]
+    fn interface_listing_never_offers_loopback_or_link_local() {
+        // Environment-dependent membership, but never environment-dependent
+        // safety: an unreachable address must never be selectable.
+        let list = list_ipv4_interfaces().expect("enumeration works on this host");
+        for i in &list {
+            let ip: Ipv4Addr = i.ip.parse().expect("dotted IPv4");
+            assert!(!ip.is_loopback(), "{} is loopback", i.ip);
+            assert!(!ip.is_link_local(), "{} is link-local", i.ip);
+            assert!(!ip.is_unspecified(), "{} is unspecified", i.ip);
+        }
+    }
+
+    #[test]
+    fn has_ipv4_rejects_addresses_this_pc_does_not_own() {
+        // 203.0.113.0/24 is TEST-NET-3: never assigned to a local adapter.
+        assert!(!has_ipv4(Ipv4Addr::new(203, 0, 113, 7)));
     }
 
     #[test]

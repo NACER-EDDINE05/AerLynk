@@ -7,6 +7,7 @@
 //! emitted by `watch_sessions`, spawned from `run()` in lib.rs.
 
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -28,7 +29,6 @@ use crate::session::{FileStatus, Session, SessionKind, SessionRegistry};
 pub struct TauriState {
     pub registry: Arc<SessionRegistry>,
     pub manager: Arc<ServerManager>,
-    pub downloads_dir: PathBuf,
     pub quarantine_dir: PathBuf,
 }
 
@@ -193,7 +193,26 @@ pub async fn set_preferred_port(state: State<'_, TauriState>, port: u16) -> Resu
 /// completes and shown in Settings.
 #[tauri::command]
 pub fn get_downloads_dir(state: State<'_, TauriState>) -> Result<String, String> {
-    Ok(state.downloads_dir.to_string_lossy().into_owned())
+    Ok(state.manager.downloads_dir().to_string_lossy().into_owned())
+}
+
+/// Change the folder received files are saved to (`None` = the OS Downloads
+/// folder). Returns the effective absolute path so the UI can display exactly
+/// what the backend will use, resolved rather than echoed back.
+#[tauri::command]
+pub fn set_downloads_dir(
+    state: State<'_, TauriState>,
+    path: Option<String>,
+) -> Result<String, String> {
+    let requested = match path.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => Some(PathBuf::from(raw)),
+    };
+    state
+        .manager
+        .set_downloads_dir(requested.as_deref())
+        .map(|effective| effective.to_string_lossy().into_owned())
+        .map_err(|e| format!("cannot use that folder: {e}"))
 }
 
 /// Open a folder (e.g. the Downloads directory) in the system file manager.
@@ -222,13 +241,69 @@ pub fn open_folder(app: AppHandle, path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_network_info(state: State<'_, TauriState>) -> Result<NetworkInfoResult, String> {
-    let lan = net::discover_lan_ipv4().map_err(|e| e.to_string())?;
+    let discovered = net::discover_lan_ipv4();
+    // The address the next session will actually bind to: the interface chosen
+    // in Settings when it is still available, else the discovered one. The UI
+    // must never show an address the QR will not contain.
+    let effective = state.manager.effective_ip();
+    let (ip, discovered_name) = match (&discovered, effective) {
+        (Ok(lan), Some(ip)) => (ip, lan.name.clone()),
+        (Ok(lan), None) => (lan.ip, lan.name.clone()),
+        (Err(_), Some(ip)) => (ip, "Network".to_string()),
+        (Err(e), None) => return Err(e.to_string()),
+    };
+    // Prefer the adapter's friendly name for the address in use.
+    let name = net::list_ipv4_interfaces()
+        .ok()
+        .and_then(|list| {
+            list.into_iter()
+                .find(|i| i.ip == ip.to_string())
+                .map(|i| i.name)
+        })
+        .unwrap_or(discovered_name);
     let port = state.manager.bound_addr().map(|a| a.port()).unwrap_or(0);
     Ok(NetworkInfoResult {
-        lan_ip: lan.ip.to_string(),
-        interface_name: lan.name.clone(),
+        lan_ip: ip.to_string(),
+        interface_name: name,
         port,
     })
+}
+
+/// Every adapter the phone-facing server could bind to, real ones first. The
+/// UI offers these in Settings so a multi-homed PC (hotspot + Ethernet + VPN)
+/// can be pinned to the interface the phone actually shares.
+#[tauri::command]
+pub fn list_network_interfaces() -> Result<Vec<net::InterfaceInfo>, String> {
+    net::list_ipv4_interfaces().map_err(|e| e.to_string())
+}
+
+/// Pin the bind address to one adapter, or `None`/empty for automatic
+/// discovery. Validated against the live interface table so a remembered
+/// choice from another network can never be applied. An idle server is shut
+/// down so the next session binds the new interface; live sessions keep the
+/// address they were paired on.
+#[tauri::command]
+pub async fn set_preferred_bind_ip(
+    state: State<'_, TauriState>,
+    ip: Option<String>,
+) -> Result<(), String> {
+    let parsed = match ip.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => Some(
+            raw.parse::<Ipv4Addr>()
+                .map_err(|_| format!("not an IPv4 address: {raw}"))?,
+        ),
+    };
+    if let Some(candidate) = parsed {
+        if !net::has_ipv4(candidate) {
+            return Err(format!(
+                "{candidate} is not assigned to any interface on this PC"
+            ));
+        }
+    }
+    state.manager.set_preferred_ip(parsed);
+    let _ = state.manager.shutdown_if_idle().await;
+    Ok(())
 }
 
 /// Bind (if needed) and self-test. The returned report uses the real bound
@@ -329,7 +404,18 @@ pub async fn watch_sessions(handle: AppHandle, registry: Arc<SessionRegistry>, m
             let total: u64 = files.iter().map(|f| f.size).sum();
             let sent: u64 = files.iter().map(|f| f.sent_bytes.load(Ordering::Relaxed)).sum();
 
-            if total > 0 && files.iter().all(|f| *f.status.lock().unwrap() == FileStatus::Done) {
+            // A send session's manifest is fixed up front, so every file being
+            // done means the phone finished. A receive session learns its files
+            // as they arrive — the phone must also say the batch is over, or
+            // the session would end between two files of the same batch.
+            let batch_complete = match s.kind {
+                SessionKind::Send => true,
+                SessionKind::Receive => s.is_upload_complete(),
+            };
+            if batch_complete
+                && total > 0
+                && files.iter().all(|f| *f.status.lock().unwrap() == FileStatus::Done)
+            {
                 let token = s.token.clone();
                 let names: Vec<String> = files.iter().map(|f| f.original_name.clone()).collect();
                 let _ = handle.emit(

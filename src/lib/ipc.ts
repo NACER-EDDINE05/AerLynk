@@ -77,6 +77,19 @@ export const pickFiles = async (): Promise<string[]> => {
 export const getDownloadsDir = (): Promise<string> =>
   invoke<string>('get_downloads_dir');
 
+/**
+ * Point received files at `path`, or back at the OS Downloads folder when
+ * null. Resolves with the effective absolute folder.
+ */
+export const setDownloadsDir = (path: string | null): Promise<string> =>
+  invoke<string>('set_downloads_dir', { path });
+
+/** Native folder picker. Returns null when the user cancels. */
+export const pickDirectory = async (title: string): Promise<string | null> => {
+  const selected = await open({ directory: true, multiple: false, title });
+  return typeof selected === 'string' ? selected : null;
+};
+
 export const openFolder = (path: string): Promise<void> =>
   invoke('open_folder', { path });
 
@@ -102,8 +115,23 @@ export interface FirewallStatusResult {
   blocks?: string[];
 }
 
+export interface NetworkInterface {
+  name: string;
+  ip: string;
+  isVirtual: boolean;
+  isPrivate: boolean;
+}
+
 export const getNetworkInfo = (): Promise<NetworkInfoResult> =>
   invoke('get_network_info');
+
+/** Every adapter the phone-facing server could bind to, real ones first. */
+export const listNetworkInterfaces = (): Promise<NetworkInterface[]> =>
+  invoke('list_network_interfaces');
+
+/** Pin the bind address to one adapter; null = automatic discovery. */
+export const setPreferredBindIp = (ip: string | null): Promise<void> =>
+  invoke('set_preferred_bind_ip', { ip });
 
 export const checkFirewall = (): Promise<FirewallStatusResult> =>
   invoke('check_firewall');

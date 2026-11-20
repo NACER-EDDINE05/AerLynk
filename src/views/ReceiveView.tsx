@@ -11,16 +11,20 @@ type AddHistory = (entry: Omit<HistoryEntry, 'id' | 'timestamp'>) => void;
 
 interface ReceiveViewProps {
   addHistory: AddHistory;
+  /** Effective destination folder, resolved by the backend. */
+  downloadsDir?: string;
 }
 
-export function ReceiveView({ addHistory }: ReceiveViewProps) {
-  const [downloadsDir, setDownloadsDir] = useState('');
+export function ReceiveView({ addHistory, downloadsDir: chosenDir }: ReceiveViewProps) {
+  const [fallbackDir, setFallbackDir] = useState('');
+  const downloadsDir = chosenDir || fallbackDir;
 
   useEffect(() => {
+    if (chosenDir) return;
     getDownloadsDir()
-      .then(setDownloadsDir)
+      .then(setFallbackDir)
       .catch(() => {});
-  }, []);
+  }, [chosenDir]);
 
   const onFinished = useCallback(
     (outcome: TransferOutcome) => {

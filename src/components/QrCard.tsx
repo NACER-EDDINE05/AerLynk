@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon } from './Icons';
+import { CheckIcon, CopyIcon, LinkIcon } from './Icons';
 import { useState } from 'react';
 
 interface QrCardProps {
@@ -16,6 +16,7 @@ interface QrCardProps {
 /** The real, scannable QR from the backend plus pairing code and copy-link. */
 export function QrCard({ qrSvg, displayCode, url, hint, footer, pulse = false }: QrCardProps) {
   const [copied, setCopied] = useState(false);
+  const [manual, setManual] = useState(false);
 
   const copy = async () => {
     try {
@@ -79,6 +80,17 @@ export function QrCard({ qrSvg, displayCode, url, hint, footer, pulse = false }:
             {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
             {copied ? 'Copied' : 'Copy link'}
           </button>
+          {url && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setManual((v) => !v)}
+              aria-expanded={manual}
+            >
+              <LinkIcon size={14} />
+              {manual ? 'Hide manual setup' : 'Connect manually'}
+            </button>
+          )}
         </div>
 
         {url && (
@@ -88,6 +100,48 @@ export function QrCard({ qrSvg, displayCode, url, hint, footer, pulse = false }:
             title={url}
           >
             {url}
+          </div>
+        )}
+
+        {/* Fallback for a phone whose camera cannot focus or whose QR app
+            strips the URL fragment (which carries the key). */}
+        {manual && url && (
+          <div
+            className="mt-3 rounded-lg p-3"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          >
+            <div
+              className="text-[10.5px] font-medium uppercase"
+              style={{ color: 'var(--text-muted)', letterSpacing: '0.1em' }}
+            >
+              Open this on your phone
+            </div>
+            <div
+              className="mono mt-1.5 text-[11.5px] select-text"
+              style={{ color: 'var(--text)', wordBreak: 'break-all' }}
+            >
+              {url}
+            </div>
+            <ol
+              className="mt-2 flex list-decimal flex-col gap-1 pl-4 text-[12px]"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <li>
+                Open the whole link, in the same Wi-Fi network. The part after{' '}
+                <span className="mono">#</span> is the encryption key.
+              </li>
+              <li>
+                If the page says the key is missing, the link was cut short — use{' '}
+                <span style={{ color: 'var(--text)' }}>Copy link</span> and send it across intact.
+              </li>
+              <li>
+                Check that the code on the phone reads{' '}
+                <span className="mono" style={{ color: 'var(--text)' }}>
+                  {displayCode}
+                </span>
+                .
+              </li>
+            </ol>
           </div>
         )}
 

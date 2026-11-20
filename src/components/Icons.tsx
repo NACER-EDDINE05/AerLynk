@@ -119,6 +119,18 @@ export const RefreshIcon = (p: IconProps) => (
   </svg>
 );
 
+/** The supplied AerLynk emblem, cropped square and centred on a white plate. */
+export const BrandMark = ({ size = 32 }: { size?: number }) => (
+  <span className="brand-tile" style={{ width: size, height: size }}>
+    <img src="/brand/logo-mark.png" alt="AerLynk" width={size} height={size} draggable={false} />
+  </span>
+);
+
+/** The full supplied lockup (emblem, wordmark and tagline). */
+export const BrandLockup = ({ className = '' }: { className?: string }) => (
+  <img className={`brand-lockup ${className}`} src="/brand/logo-lockup.png" alt="AerLynk — local, secure file transfer" draggable={false} />
+);
+
 export const LogoIcon = (p: IconProps) => (
   <svg width={p.size ?? 22} height={p.size ?? 22} viewBox="0 0 32 32" fill="none" aria-hidden>
     <defs>

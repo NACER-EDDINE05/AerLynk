@@ -6,23 +6,33 @@
 //! `net`, never `0.0.0.0`, so the server is not exposed on VPN tunnels, host-
 //! only adapters, or other interfaces the phone could not reach anyway.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::RwLock;
 
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
+use crate::net;
 use crate::server::{app, AppState};
 use crate::session::SessionRegistry;
 
 pub struct ServerManager {
     registry: Arc<SessionRegistry>,
-    downloads_dir: PathBuf,
+    /// Destination for received files. Read at bind time, so a change applies
+    /// to the next session while a live transfer keeps the folder it started
+    /// with (a half-delivered file never straddles two directories).
+    downloads_dir: RwLock<PathBuf>,
+    /// The OS Downloads folder, restored by "use default".
+    default_downloads_dir: PathBuf,
     quarantine_dir: PathBuf,
-    /// SEC-7: the LAN address to bind (ephemeral port). Never 0.0.0.0.
-    bind_addr: SocketAddr,
+    /// SEC-7: the LAN address to bind (ephemeral port). Never 0.0.0.0. It is
+    /// refreshed when a stale address is detected at bind time (Wi-Fi switch).
+    bind_addr: RwLock<SocketAddr>,
+    /// Interface chosen in Settings (None = automatic discovery).
+    preferred_ip: RwLock<Option<Ipv4Addr>>,
     /// Abort handle for the running server task, if any.
     server: tokio::sync::Mutex<Option<RunningServer>>,
     /// User-preferred phone-facing port (0 = OS-assigned ephemeral).
@@ -45,12 +55,64 @@ impl ServerManager {
     ) -> Self {
         Self {
             registry,
-            downloads_dir,
+            downloads_dir: RwLock::new(downloads_dir.clone()),
+            default_downloads_dir: downloads_dir,
             quarantine_dir,
-            bind_addr,
+            bind_addr: RwLock::new(bind_addr),
+            preferred_ip: RwLock::new(None),
             server: tokio::sync::Mutex::new(None),
             preferred_port: AtomicU16::new(0),
         }
+    }
+
+    /// The folder received files are currently written to.
+    pub fn downloads_dir(&self) -> PathBuf {
+        self.downloads_dir.read().unwrap().clone()
+    }
+
+    /// Point received files at `dir`, or back at the OS Downloads folder when
+    /// `None`. Creates the folder when needed and returns the effective path.
+    pub fn set_downloads_dir(&self, dir: Option<&std::path::Path>) -> std::io::Result<PathBuf> {
+        let target = match dir {
+            Some(path) => path.to_path_buf(),
+            None => self.default_downloads_dir.clone(),
+        };
+        if !target.is_absolute() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "folder path must be absolute",
+            ));
+        }
+        std::fs::create_dir_all(&target)?;
+        *self.downloads_dir.write().unwrap() = target.clone();
+        Ok(target)
+    }
+
+    /// The IPv4 address the next session will bind to: the interface chosen in
+    /// Settings when it is still present on this PC, otherwise the automatically
+    /// discovered one. A stale choice (unplugged adapter, left the network)
+    /// degrades to automatic discovery instead of breaking the app.
+    pub fn effective_ip(&self) -> Option<Ipv4Addr> {
+        if let Some(chosen) = *self.preferred_ip.read().unwrap() {
+            if net::has_ipv4(chosen) {
+                return Some(chosen);
+            }
+        }
+        match self.bind_addr.read().unwrap().ip() {
+            IpAddr::V4(v4) => Some(v4),
+            IpAddr::V6(_) => None,
+        }
+    }
+
+    /// The user's chosen interface, if any (may be currently unavailable).
+    pub fn preferred_ip(&self) -> Option<Ipv4Addr> {
+        *self.preferred_ip.read().unwrap()
+    }
+
+    /// Choose the interface sessions bind to (None = automatic). Takes effect
+    /// the next time the server binds; live sessions keep their address.
+    pub fn set_preferred_ip(&self, ip: Option<Ipv4Addr>) {
+        *self.preferred_ip.write().unwrap() = ip;
     }
 
     /// Ensure the HTTP server is listening. Starts it on first use; returns
@@ -62,7 +124,7 @@ impl ServerManager {
         }
         let state = AppState {
             registry: self.registry.clone(),
-            downloads_dir: self.downloads_dir.clone(),
+            downloads_dir: self.downloads_dir(),
             quarantine_dir: self.quarantine_dir.clone(),
         };
         let router = app(state);
@@ -70,7 +132,32 @@ impl ServerManager {
         // still answers when the LAN address is used locally. The port is the
         // user's preferred one (Settings) when set, else OS-assigned ephemeral.
         let port = self.preferred_port.load(Ordering::Relaxed);
-        let listener = TcpListener::bind(SocketAddr::new(self.bind_addr.ip(), port)).await?;
+        let ip = self
+            .effective_ip()
+            .unwrap_or(Ipv4Addr::LOCALHOST);
+        let listener = match TcpListener::bind(SocketAddr::new(IpAddr::V4(ip), port)).await {
+            Ok(listener) => listener,
+            Err(first) => {
+                // The remembered address may have gone away (Wi-Fi switched,
+                // hotspot joined, VPN dropped). Re-discover once before failing
+                // the session: a QR on the current address beats an error.
+                let rediscovered = tokio::task::spawn_blocking(net::discover_lan_ipv4)
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .map(|lan| lan.ip);
+                match rediscovered {
+                    Some(fresh) if fresh != ip => {
+                        let listener =
+                            TcpListener::bind(SocketAddr::new(IpAddr::V4(fresh), port)).await?;
+                        *self.bind_addr.write().unwrap() =
+                            SocketAddr::new(IpAddr::V4(fresh), 0);
+                        listener
+                    }
+                    _ => return Err(first),
+                }
+            }
+        };
         let addr = listener.local_addr()?;
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -225,6 +312,49 @@ mod tests {
         assert!(!mgr.is_running());
         assert_eq!(mgr.bound_addr(), None);
         mgr.shutdown().await; // idempotent
+    }
+
+    #[tokio::test]
+    async fn downloads_dir_can_be_changed_and_reset() {
+        let registry = Arc::new(SessionRegistry::new(DEFAULT_INACTIVITY_TIMEOUT));
+        let (dl, q) = tmp_dirs("dlchoose");
+        let mgr = ServerManager::new(registry, dl.clone(), q, loopback_bind());
+        assert_eq!(mgr.downloads_dir(), dl);
+
+        let chosen = dl.join("received");
+        let effective = mgr.set_downloads_dir(Some(&chosen)).unwrap();
+        assert_eq!(effective, chosen);
+        assert!(chosen.is_dir(), "the chosen folder is created if missing");
+        assert_eq!(mgr.downloads_dir(), chosen);
+
+        // A relative path is refused rather than silently resolved.
+        assert!(mgr
+            .set_downloads_dir(Some(std::path::Path::new("relative\\dir")))
+            .is_err());
+
+        // None restores the OS default captured at startup.
+        assert_eq!(mgr.set_downloads_dir(None).unwrap(), dl);
+        assert_eq!(mgr.downloads_dir(), dl);
+    }
+
+    #[tokio::test]
+    async fn preferred_interface_overrides_the_default_bind() {
+        // The preference is honoured only while that address exists on this
+        // PC; loopback is never offered by the UI, so a stale choice must fall
+        // back to the default bind exactly as the test's loopback default does.
+        let registry = Arc::new(SessionRegistry::new(DEFAULT_INACTIVITY_TIMEOUT));
+        let (dl, q) = tmp_dirs("prefip");
+        let mgr = ServerManager::new(registry, dl, q, loopback_bind());
+        assert_eq!(mgr.preferred_ip(), None);
+        mgr.set_preferred_ip(Some(Ipv4Addr::new(203, 0, 113, 9)));
+        assert_eq!(mgr.preferred_ip(), Some(Ipv4Addr::new(203, 0, 113, 9)));
+        assert_eq!(
+            mgr.effective_ip(),
+            Some(Ipv4Addr::LOCALHOST),
+            "an address this PC does not own must not be used"
+        );
+        mgr.set_preferred_ip(None);
+        assert_eq!(mgr.effective_ip(), Some(Ipv4Addr::LOCALHOST));
     }
 
     #[tokio::test]

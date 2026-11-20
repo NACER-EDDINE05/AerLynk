@@ -5,14 +5,13 @@
 //! a quarantine directory, then moves the plaintext into Downloads only on
 //! success (SEC-5). Partial or hostile uploads never appear as real files.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 use aerlynk_crypto::{decrypt_chunk, CryptoError, MAX_CHUNK_PLAINTEXT, TAG_LEN};
 
@@ -32,6 +31,9 @@ struct UploadResult {
 /// plaintext size, used to reject truncated uploads before release (SEC-5).
 #[derive(Deserialize)]
 struct ManifestEntry {
+    /// Informational only: entries are matched to file parts by position, so
+    /// two selected files that share a name are both verified correctly.
+    #[allow(dead_code)]
     name: String,
     size: u64,
 }
@@ -50,10 +52,15 @@ pub async fn upload(
     };
 
     let mut results = Vec::new();
-    // Parse the phone's manifest (name -> plaintext size) for completeness
-    // checks. A hostile client may omit it; entries are then unknown and we
-    // accept the upload as-is (defensive default). The phone always sends it.
-    let mut manifest: HashMap<String, u64> = HashMap::new();
+    // Parse the phone's manifest (plaintext sizes, in upload order) for
+    // completeness checks. A hostile client may omit it; entries are then
+    // unknown and we accept the upload as-is (defensive default). The phone
+    // always sends it.
+    let mut manifest: Vec<u64> = Vec::new();
+    // Matched positionally, not by name: a batch may legitimately contain two
+    // different files with the same name, and a name-keyed map would hand both
+    // parts the last entry's size — failing one of them as "incomplete".
+    let mut manifest_cursor = 0usize;
     loop {
         match multipart.next_field().await {
             Ok(Some(mut field)) => {
@@ -72,13 +79,14 @@ pub async fn upload(
                             }
                         }
                         if let Ok(list) = serde_json::from_slice::<Vec<ManifestEntry>>(&buf) {
-                            manifest.extend(list.into_iter().map(|e| (e.name, e.size)));
+                            manifest.extend(list.into_iter().map(|e| e.size));
                         }
                     }
                     continue; // other non-file fields are ignored (SEC-2)
                 };
 
-                let expected = manifest.get(&raw_name).copied();
+                let expected = manifest.get(manifest_cursor).copied();
+                manifest_cursor += 1;
                 let name = match sanitize_filename(&raw_name) {
                     Ok(n) => n,
                     Err(SafetyError::EmptyName) => {
@@ -116,6 +124,26 @@ pub async fn upload(
     (StatusCode::OK, axum::Json(results)).into_response()
 }
 
+/// POST /r/<token>/complete — the phone reports that its batch is finished.
+///
+/// The receive page uploads one file per request (so one dropped connection or
+/// rejected file cannot discard the rest), which means the server cannot infer
+/// the end of a batch from the manifest. This marker is what lets the desktop
+/// report delivery instead of closing the session between two files.
+/// Idempotent; unknown tokens get the usual indistinguishable 404.
+pub async fn complete(
+    State(state): State<super::AppState>,
+    Path(token): Path<String>,
+) -> StatusCode {
+    match resolve_session(&state, SessionKind::Receive, &token) {
+        Ok(session) => {
+            session.mark_upload_complete();
+            StatusCode::NO_CONTENT
+        }
+        Err(code) => code,
+    }
+}
+
 /// Stream one file part: decrypt framed chunks into quarantine, then move to
 /// Downloads with collision suffixing. Returns (id, error) on failure.
 async fn receive_one(
@@ -131,9 +159,14 @@ async fn receive_one(
 
     // Quarantine (SEC-5): a partial or hostile upload never lands in Downloads.
     let quarantine = state.quarantine_dir.join(quarantine_name());
-    let mut out = tokio::fs::File::create(&quarantine)
+    let raw_file = tokio::fs::File::create(&quarantine)
         .await
         .map_err(|e| (0, format!("cannot create quarantine file: {e}")))?;
+    // Buffered disk I/O: decrypted plaintext arrives one 1 MiB frame at a time,
+    // but coalescing writes into 512 KiB blocks keeps NVMe/HDD throughput high
+    // instead of paying a syscall per chunk. The buffer is flushed before the
+    // file is closed and moved into Downloads.
+    let mut out = BufWriter::with_capacity(512 * 1024, raw_file);
 
     let key = session.key;
     let base = session.base_nonce;
@@ -203,6 +236,8 @@ async fn receive_one(
         let _ = std::fs::remove_file(&quarantine);
         (0, format!("flush failed: {e}"))
     })?;
+    // Close the buffered writer (and the file handle) before the rename, so no
+    // bytes can be written to a path that has already been moved.
     drop(out);
 
     // Atomically claim a collision-free destination inside Downloads (FR-12,

@@ -70,7 +70,6 @@ pub fn run() {
             app.manage(TauriState {
                 registry: registry.clone(),
                 manager: manager.clone(),
-                downloads_dir,
                 quarantine_dir,
             });
 
@@ -94,8 +93,11 @@ pub fn run() {
             commands::cancel_transfer,
             commands::set_preferred_port,
             commands::get_downloads_dir,
+            commands::set_downloads_dir,
             commands::open_folder,
             commands::get_network_info,
+            commands::list_network_interfaces,
+            commands::set_preferred_bind_ip,
             commands::verify_reachability,
             commands::check_firewall,
             commands::repair_firewall,

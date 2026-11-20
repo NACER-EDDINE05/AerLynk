@@ -15,7 +15,10 @@ use aerlynk_crypto::{generate_key, NONCE_LEN};
 use subtle::ConstantTimeEq;
 
 /// Unambiguous display alphabet — no 0/O, no 1/I/L (FR-26).
-pub const CODE_ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+///
+/// 23 letters + 8 digits: the confusable glyphs are removed from both ends, so
+/// a code read aloud or typed by hand cannot be misspelt as a different code.
+pub const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 pub const DEFAULT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
@@ -111,6 +114,11 @@ pub struct Session {
     upload_count: AtomicU64,
     upload_bytes: AtomicU64,
     cancelled: AtomicBool,
+    /// Set when the phone reports its upload batch is finished. A receive
+    /// session learns its file list as uploads arrive, so "every known file is
+    /// done" is true between two files of the same batch — only the client can
+    /// say the batch is over.
+    upload_complete: AtomicBool,
     last_activity: Mutex<Instant>,
     created: Instant,
 }
@@ -139,6 +147,16 @@ impl Session {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
         self.touch();
+    }
+
+    /// Record that the phone finished its upload batch (FR-12).
+    pub fn mark_upload_complete(&self) {
+        self.upload_complete.store(true, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn is_upload_complete(&self) -> bool {
+        self.upload_complete.load(Ordering::Relaxed)
     }
 
     pub fn files(&self) -> Vec<SessionFile> {
@@ -280,6 +298,7 @@ impl SessionRegistry {
             upload_count: AtomicU64::new(0),
             upload_bytes: AtomicU64::new(0),
             cancelled: AtomicBool::new(false),
+            upload_complete: AtomicBool::new(false),
             last_activity: Mutex::new(Instant::now()),
             created: Instant::now(),
         });
@@ -361,8 +380,8 @@ impl SessionRegistry {
     }
 
     /// Derive a display code from the token: 4 chars from the unambiguous
-    /// alphabet, rendered as `XX-XX` (FR-26). 32 chars × 4 = 2^20 combos; the
-    /// registry checks for collisions.
+    /// alphabet, rendered as `XX-XX` (FR-26). 31^4 ≈ 923k combos; the registry
+    /// checks for collisions.
     fn display_code_from(token: &str) -> String {
         use base64::Engine;
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -516,6 +535,15 @@ mod tests {
         *s2.caps.write().unwrap() = caps;
         s2.register_upload("a.bin", 600, p.clone()).unwrap();
         assert_eq!(s2.register_upload("b.bin", 500, p.clone()), Err(SessionError::CapExceeded));
+    }
+
+    #[test]
+    fn upload_batch_completion_is_a_one_way_flag() {
+        let reg = SessionRegistry::new(DEFAULT_INACTIVITY_TIMEOUT);
+        let s = reg.create_receive_session();
+        assert!(!s.is_upload_complete(), "a fresh session expects uploads");
+        s.mark_upload_complete();
+        assert!(s.is_upload_complete());
     }
 
     #[test]
